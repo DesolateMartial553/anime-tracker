@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cozy Corner</string>
+    <string name="title_activity_main">Cozy Corner</string>
+    <string name="package_name">com.desolatemartial.cozycorner</string>
+    <string name="custom_url_scheme">com.desolatemartial.cozycorner</string>
+</resources>

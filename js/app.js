@@ -1,6 +1,6 @@
 import * as store from './store.js';
 import { searchAnime, getAiring } from './anilist.js';
-import { HER_NAME } from './config.js';
+import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
   ['watching', 'Watching'],
@@ -11,11 +11,15 @@ const STATUSES = [
 ];
 const STATUS_LABEL = Object.fromEntries(STATUSES);
 const FORMAT_LABEL = { TV: 'TV', TV_SHORT: 'Short', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music' };
+// U+FE0E asks for the plain text heart; without it Android draws a red emoji heart that ignores CSS colour.
+const HEART = '♥\uFE0E';
+const HEART_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 5.3 3.2 1.7-2 3.2-3.2 5.3-3.2 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>';
 const SUGGESTIONS = ['Frieren', 'Link Click', 'Mo Dao Zu Shi', 'Spy x Family'];
-const MOCHI = `<svg class="mochi" viewBox="0 0 120 100" aria-hidden="true">
-  <path d="M24 44 L30 12 L52 32 Z M96 44 L90 12 L68 32 Z" class="m-body"/>
+const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" aria-hidden="true">
+  <path d="M24 44 L30 12 L52 32 Z" class="m-body m-ear m-ear-l"/>
+  <path d="M96 44 L90 12 L68 32 Z" class="m-body m-ear m-ear-r"/>
   <ellipse cx="60" cy="62" rx="48" ry="34" class="m-body"/>
-  <circle cx="44" cy="60" r="4.5" class="m-ink"/><circle cx="76" cy="60" r="4.5" class="m-ink"/>
+  <g class="m-eyes"><circle cx="44" cy="60" r="4.5" class="m-ink"/><circle cx="76" cy="60" r="4.5" class="m-ink"/></g>
   <ellipse cx="34" cy="70" rx="7" ry="4" class="m-blush"/><ellipse cx="86" cy="70" rx="7" ry="4" class="m-blush"/>
   <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
 </svg>`;
@@ -34,10 +38,17 @@ const detailDlg = $('#detailDlg');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // The Anime/Donghua filter isn't remembered, so a forgotten filter never hides half her shelf.
 const saveUi = () => { try { localStorage.setItem('cc.ui', JSON.stringify({ ...ui, kind: 'all' })); } catch {} };
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const buzz = (ms = 12) => { try { navigator.vibrate?.(ms); } catch {} };
+const isApp = Boolean(window.Capacitor?.isNativePlatform?.());
 
 const isDonghua = (e) => e.country === 'CN';
 const tintOf = (e) => (/^#[0-9a-f]{6}$/i.test(e.cover_color || '') ? e.cover_color : '#ff8fb8');
 const totalOf = (e) => e.total_eps || airing[e.anilist_id]?.episodes || null;
+const pctOf = (e) => {
+  const total = totalOf(e);
+  return total ? Math.min(100, (e.progress / total) * 100) : e.progress ? 100 : 0;
+};
 const nextOf = (e) => {
   const n = airing[e.anilist_id]?.next;
   return n && n.airingAt * 1000 > Date.now() ? n : null;
@@ -60,20 +71,19 @@ function badges(e) {
 
 /* ---------- list view ---------- */
 
-function card(e) {
+function card(e, i) {
   const total = totalOf(e);
-  const pct = total ? Math.min(100, (e.progress / total) * 100) : e.progress ? 100 : 0;
   const next = nextOf(e);
-  return `<article class="card" style="--tint:${tintOf(e)}">
+  return `<article class="card" data-id="${e.id}" style="--tint:${tintOf(e)};--i:${Math.min(i, 10)}">
     <button class="cover-btn" data-open="${e.id}" aria-label="Open ${esc(e.title)}">
       <img class="sticker" src="${esc(e.cover_url)}" alt="" loading="lazy">
     </button>
     <div class="card-body">
       <button class="title" data-open="${e.id}">${esc(e.title)}</button>
-      <div class="meta">${badges(e)}${e.score ? `<span class="score">♥ ${e.score}</span>` : ''}</div>
+      <div class="meta">${badges(e)}${e.score ? `<span class="score">${HEART} ${e.score}</span>` : ''}</div>
       <div class="prog">
-        <div class="bar${total ? '' : ' unknown'}"><i style="width:${pct}%"></i></div>
-        <span>ep ${e.progress} / ${total ?? '?'}</span>
+        <div class="bar${total ? '' : ' unknown'}"><i style="width:${pctOf(e)}%"></i></div>
+        <span>ep <b class="ep">${e.progress}</b> / ${total ?? '?'}</span>
       </div>
       ${next ? `<p class="next">✦ ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
     </div>
@@ -94,7 +104,19 @@ function emptyState() {
   const [msg, cta] = fresh
     ? ['Welcome to your cozy corner ✿ Search any anime or donghua to start your shelf.', 'Add your first show']
     : EMPTY[ui.status];
-  return `<div class="empty">${MOCHI}<p>${msg}</p>${cta ? `<button class="pill" data-action="search">${cta}</button>` : ''}</div>`;
+  return `<div class="empty">${mochi('alive')}<p>${msg}</p>${cta ? `<button class="pill" data-action="search">${cta}</button>` : ''}</div>`;
+}
+
+function appPromo() {
+  let hidden = true;
+  try { hidden = isApp || !/Android/i.test(navigator.userAgent) || localStorage.getItem('cc.appPromo') === 'hidden'; } catch {}
+  if (hidden) return '';
+  return `<div class="app-promo">
+    ${mochi()}
+    <div><b>Get the Cozy Corner app</b><small>Your shelf as a real app on your phone</small></div>
+    <a class="pill" href="${APK_URL}">Download</a>
+    <button class="icon-btn" data-hide-promo aria-label="Hide this">×</button>
+  </div>`;
 }
 
 function renderList() {
@@ -113,10 +135,12 @@ function renderList() {
   const opt = (v, l) => `<option value="${v}"${v === ui.sort ? ' selected' : ''}>${l}</option>`;
   main.innerHTML = `
     <div class="chips scroll" role="tablist" aria-label="Lists">
+      <span class="ind" aria-hidden="true"></span>
       ${STATUSES.map(([k, l]) => `<button class="chip${k === ui.status ? ' on' : ''}" role="tab" aria-selected="${k === ui.status}" data-status-tab="${k}">${l}<span class="count">${count(k)}</span></button>`).join('')}
     </div>
     <div class="tools">
       <div class="seg" role="group" aria-label="Show type">
+        <span class="ind" aria-hidden="true"></span>
         ${[['all', 'All'], ['anime', 'Anime'], ['donghua', 'Donghua']].map(([k, l]) => `<button class="${k === ui.kind ? 'on' : ''}" aria-pressed="${k === ui.kind}" data-kind="${k}">${l}</button>`).join('')}
       </div>
       <select id="sortSel" aria-label="Sort by">
@@ -124,6 +148,7 @@ function renderList() {
       </select>
     </div>
     ${items.length ? `<div class="cards">${items.map(card).join('')}</div>` : emptyState()}
+    ${appPromo()}
     ${store.cloudEnabled ? '' : '<p class="local-note">Saved on this device only.</p>'}`;
 }
 
@@ -151,12 +176,13 @@ function renderAiring() {
     groups.at(-1).items.push({ ...r, time: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) });
   }
 
+  let i = 0;
   const body = !airingLoaded && !rows.length
     ? '<p class="dim center">Checking the schedule…</p>'
     : !groups.length
-      ? `<div class="empty">${MOCHI}<p>No airing shows on your lists right now. Currently-airing shows you add will appear here with a countdown.</p></div>`
+      ? `<div class="empty">${mochi('alive')}<p>No airing shows on your lists right now. Currently-airing shows you add will appear here with a countdown.</p></div>`
       : groups.map((g) => `<section class="day"><h3>${g.label}</h3><ul>
-          ${g.items.map(({ e, n, time }) => `<li><button class="air-row" data-open="${e.id}" style="--tint:${tintOf(e)}">
+          ${g.items.map(({ e, n, time }) => `<li style="--i:${Math.min(i++, 10)}"><button class="air-row" data-open="${e.id}" style="--tint:${tintOf(e)}">
             <span class="time">${time}</span>
             <img class="sticker sm" src="${esc(e.cover_url)}" alt="" loading="lazy">
             <span class="air-title">${esc(e.title)}<small>ep ${n.episode} · in <b data-cd="${n.airingAt}">${countdown(n.airingAt)}</b>${e.status !== 'watching' ? ` · ${STATUS_LABEL[e.status]}` : ''}</small></span>
@@ -166,17 +192,62 @@ function renderAiring() {
   main.innerHTML = `<div class="air-head"><h2>Airing soon</h2><p class="dim">Next episodes of shows on your lists, in your time zone.</p></div>${body}`;
 }
 
-function render() {
+// The pink "active" pill glides from the previous chip to the new one.
+const indPos = {};
+function placeInd(sel, key) {
+  const box = $(sel, main);
+  const on = box?.querySelector('.on');
+  const ind = box?.querySelector('.ind');
+  if (!on || !ind) return;
+  const to = { x: on.offsetLeft, y: on.offsetTop, w: on.offsetWidth, h: on.offsetHeight };
+  const apply = (p) => {
+    ind.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    ind.style.width = p.w + 'px';
+    ind.style.height = p.h + 'px';
+  };
+  box.classList.add('has-ind');
+  const from = indPos[key];
+  if (from && !reduceMotion()) {
+    ind.style.transition = 'none';
+    apply(from);
+    void ind.offsetWidth;
+    ind.style.transition = '';
+  }
+  apply(to);
+  indPos[key] = to;
+}
+
+function render(animate = false) {
   const chips = $('.chips.scroll');
   const scrollLeft = chips ? chips.scrollLeft : 0;
+  main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
+  if (animate && !reduceMotion()) {
+    void main.offsetWidth;
+    main.classList.add('animate');
+  }
+  if (ui.view === 'list') {
+    placeInd('.chips.scroll', 'status');
+    placeInd('.seg', 'kind');
+  }
   document.querySelectorAll('.nav-btn[data-view]').forEach((b) => {
     if (b.dataset.view === ui.view) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
+}
+
+// Keeps the chosen status chip fully on screen in the sideways-scrolling row.
+function revealActiveChip() {
+  const box = $('.chips.scroll');
+  const on = box?.querySelector('.on');
+  if (!on) return;
+  const left = on.offsetLeft - 16;
+  const right = on.offsetLeft + on.offsetWidth + 16 - box.clientWidth;
+  if (box.scrollLeft > left) box.scrollTo({ left, behavior: 'smooth' });
+  else if (box.scrollLeft < right) box.scrollTo({ left: right, behavior: 'smooth' });
 }
 
 let airingBusy = false;
@@ -184,14 +255,17 @@ async function loadAiring() {
   if (airingBusy) return;
   airingBusy = true;
   const ids = store.all().filter((e) => !['completed', 'dropped'].includes(e.status)).map((e) => e.anilist_id);
+  const before = JSON.stringify(airing);
   try {
     airing = await getAiring(ids);
   } catch (err) {
     console.warn('airing fetch failed', err);
   }
   airingBusy = false;
+  const changed = !airingLoaded || JSON.stringify(airing) !== before;
   airingLoaded = true;
-  render();
+  // Skipping no-op re-renders keeps the card pop-in animation from being cut short.
+  if (changed) render();
 }
 
 /* ---------- actions ---------- */
@@ -205,15 +279,28 @@ async function safe(promise) {
   }
 }
 
-async function setProgress(id, value) {
+// Optimistic update: the store re-renders the shelf straight away, the detail sheet follows.
+async function change(id, patch) {
+  const pending = store.update(id, patch);
+  renderDetail();
+  const ok = await safe(pending);
+  if (!ok) renderDetail();
+  return ok;
+}
+
+async function setProgress(id, value, fromRect = null) {
   const e = store.get(id);
   const total = totalOf(e);
   value = Math.max(0, total ? Math.min(total, value) : value);
   if (Number.isNaN(value) || value === e.progress) return renderDetail();
+  const prevPct = pctOf(e);
   const patch = { progress: value };
   if (value > e.progress && ['planning', 'paused', 'dropped'].includes(e.status)) patch.status = 'watching';
-  if (!(await safe(store.update(id, patch)))) return;
-  renderDetail();
+  const pending = change(id, patch);
+  buzz();
+  if (fromRect) celebratePlus(id, prevPct, fromRect);
+  else bumpDetailProgress();
+  if (!(await pending)) return;
   if (total && value === total && e.status !== 'completed') {
     toast(`That was the last episode of ${e.title}!`, { label: 'Mark completed', fn: () => setStatus(id, 'completed') });
   } else if (patch.status) {
@@ -227,20 +314,159 @@ async function setStatus(id, status) {
   const patch = { status };
   const total = totalOf(e);
   if (status === 'completed' && total) patch.progress = total;
-  if (!(await safe(store.update(id, patch)))) return;
-  renderDetail();
+  const pending = change(id, patch);
   if (status === 'completed') {
-    burst();
-    toast(`${e.title} is finished! ✿`);
+    celebrate();
+    toast(`${e.title} is finished!`, null, true);
   } else {
     toast(`Moved to ${STATUS_LABEL[status]}`);
   }
+  await pending;
+}
+
+/* ---------- little animations ---------- */
+
+function floatText(text, x, y) {
+  if (reduceMotion()) return;
+  const s = document.createElement('span');
+  s.className = 'float-up';
+  s.textContent = text;
+  s.style.cssText = `left:${x}px;top:${y}px`;
+  (document.querySelector('dialog[open]') || document.body).appendChild(s);
+  setTimeout(() => s.remove(), 1000);
+}
+
+function celebratePlus(id, prevPct, rect) {
+  floatText(`+1 ${HEART}`, rect.left + rect.width / 2, rect.top);
+  if (reduceMotion()) return;
+  const el = main.querySelector(`.card[data-id="${id}"]`);
+  if (!el) return; // it moved to another list
+  el.querySelector('.plus1')?.classList.add('squish');
+  el.querySelector('.ep')?.classList.add('flip');
+  const bar = el.querySelector('.bar i');
+  if (bar) {
+    const to = bar.style.width;
+    bar.style.transition = 'none';
+    bar.style.width = prevPct + '%';
+    void bar.offsetWidth;
+    bar.style.transition = '';
+    bar.style.width = to;
+  }
+}
+
+function bumpDetailProgress() {
+  if (reduceMotion()) return;
+  $('#dProg')?.classList.add('flip');
+}
+
+function heartsRipple(n, rect) {
+  buzz(8);
+  if (reduceMotion()) return;
+  detailDlg.querySelectorAll('.heart').forEach((h, k) => {
+    if (k >= n) return;
+    h.style.setProperty('--d', k * 28 + 'ms');
+    h.classList.add(k === n - 1 ? 'pop' : 'ripple');
+  });
+  burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 8, glyphs: [HEART], dist: 46, size: 13 });
+}
+
+function burst(x = innerWidth / 2, y = innerHeight / 2, { count = 18, glyphs = ['✦', '✿', HEART, '★'], dist = 110, size = 20, delay = 0 } = {}) {
+  if (reduceMotion()) return;
+  const host = document.querySelector('dialog[open]') || document.body;
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('span');
+    const a = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const r = dist * (0.6 + Math.random() * 0.7);
+    s.className = 'spark';
+    s.textContent = glyphs[i % glyphs.length];
+    s.style.cssText = `left:${x}px;top:${y}px;font-size:${size}px;animation-delay:${delay}ms;--dx:${Math.cos(a) * r}px;--dy:${Math.sin(a) * r}px;--c:var(--c${i % 3})`;
+    host.appendChild(s);
+    setTimeout(() => s.remove(), 1100 + delay);
+  }
+}
+
+function celebrate() {
+  buzz([12, 60, 18]);
+  const x = innerWidth / 2, y = innerHeight * 0.45;
+  burst(x, y, { count: 22, dist: 150 });
+  burst(x, y, { count: 14, glyphs: ['❀', '✿'], dist: 90, size: 24, delay: 150 });
+}
+
+function hideSplash() {
+  const s = $('#splash');
+  if (!s) return;
+  setTimeout(() => {
+    s.classList.add('out');
+    setTimeout(() => s.remove(), 500);
+  }, reduceMotion() ? 0 : 650);
+}
+
+// Drifting sakura petals by day, twinkling stars by night (CSS decides which).
+function ambient() {
+  if (reduceMotion()) return;
+  const r = (a, b) => (a + Math.random() * (b - a)).toFixed(2);
+  $('#ambient').innerHTML = Array.from({ length: 7 }, () =>
+    `<span style="--x:${r(0, 100)}vw;--y:${r(5, 90)}vh;--d:-${r(0, 20)}s;--t:${r(14, 24)}s;--s:${r(0.6, 1.2)}"></span>`,
+  ).join('');
+}
+
+/* ---------- sheets (search + detail) ---------- */
+
+// Each open sheet gets a history entry, so Android's back gesture closes it.
+function openSheet(dlg) {
+  if (dlg.open) return;
+  dlg.showModal();
+  history.pushState({ sheet: dlg.id }, '');
+}
+
+function closeSheet(dlg) {
+  if (!dlg.open || dlg.classList.contains('closing')) return;
+  if (history.state?.sheet === dlg.id) history.back(); // popstate does the closing
+  else animateClose(dlg);
+}
+
+function animateClose(dlg) {
+  if (!dlg.open || dlg.classList.contains('closing')) return;
+  const finish = () => {
+    dlg.classList.remove('closing');
+    dlg.style.transform = '';
+    dlg.close();
+  };
+  if (reduceMotion()) return finish();
+  dlg.classList.add('closing');
+  setTimeout(finish, 220);
+}
+
+function enableSwipe(dlg) {
+  let y0 = null;
+  let dy = 0;
+  dlg.addEventListener('pointerdown', (ev) => {
+    if (!ev.target.closest('.grab')) return;
+    y0 = ev.clientY;
+    dy = 0;
+    dlg.setPointerCapture(ev.pointerId);
+    dlg.classList.add('dragging');
+  });
+  dlg.addEventListener('pointermove', (ev) => {
+    if (y0 === null) return;
+    dy = Math.max(0, ev.clientY - y0);
+    dlg.style.transform = `translateY(${dy}px)`;
+  });
+  const end = () => {
+    if (y0 === null) return;
+    y0 = null;
+    dlg.classList.remove('dragging');
+    if (dy > 100) closeSheet(dlg);
+    else dlg.style.transform = '';
+  };
+  dlg.addEventListener('pointerup', end);
+  dlg.addEventListener('pointercancel', end);
 }
 
 /* ---------- search ---------- */
 
 function openSearch() {
-  if (!searchDlg.open) searchDlg.showModal();
+  openSheet(searchDlg);
   const q = $('#q');
   q.value = '';
   renderResults(null);
@@ -253,7 +479,7 @@ function renderResults(state) {
     box.innerHTML = `<div class="hint"><p>Search by English, romaji or native title.</p>
       <div class="chips wrap">${SUGGESTIONS.map((s) => `<button class="chip" data-suggest="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   } else if (state === 'loading') {
-    box.innerHTML = '<p class="dim center">Searching…</p>';
+    box.innerHTML = '<div class="loading" aria-label="Searching"><span></span><span></span><span></span></div>';
   } else if (state === 'error') {
     box.innerHTML = '<p class="dim center">AniList is being shy right now. Try again in a moment.</p>';
   } else if (!lastResults.length) {
@@ -262,7 +488,7 @@ function renderResults(state) {
     box.innerHTML = `<ul>${lastResults.map((r, i) => {
       const have = store.findByAnilist(r.anilist_id);
       const eps = r.total_eps ? `${r.total_eps} eps` : r.airing_status === 'RELEASING' ? 'airing' : '';
-      return `<li class="result" style="--tint:${tintOf(r)}">
+      return `<li class="result" style="--tint:${tintOf(r)};--i:${Math.min(i, 10)}">
         <img class="sticker sm" src="${esc(r.cover_url)}" alt="" loading="lazy">
         <div class="r-info">
           <b>${esc(r.title)}</b>
@@ -277,6 +503,7 @@ function renderResults(state) {
       </li>`;
     }).join('')}</ul>`;
   }
+  box.classList.toggle('fresh', state === 'done');
 }
 
 let searchTimer;
@@ -298,37 +525,49 @@ function onSearchInput() {
   }, 350);
 }
 
-async function addFromSearch(i, status) {
+async function addFromSearch(i, status, rect) {
   const show = lastResults[i];
   if (!show || store.findByAnilist(show.anilist_id)) return;
-  if (!(await safe(store.add(show, status)))) return;
+  const pending = store.add(show, status);
   ui.view = 'list';
   ui.status = status;
   saveUi();
   render();
-  renderResults('done');
+  renderResults('');
+  buzz();
+  burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 10, dist: 55, size: 15 });
   toast(`Added to ${STATUS_LABEL[status]} ✿`);
+  if (!(await safe(pending))) renderResults('');
 }
 
 /* ---------- detail sheet ---------- */
 
 function openDetail(id) {
-  if (searchDlg.open) searchDlg.close();
   openId = id;
   renderDetail();
-  if (!detailDlg.open) detailDlg.showModal();
+  if (searchDlg.open) {
+    // Swap sheets in place so a single back press still closes the detail sheet.
+    animateClose(searchDlg);
+    if (history.state?.sheet === 'searchDlg') history.replaceState({ sheet: 'detailDlg' }, '');
+    detailDlg.showModal();
+  } else {
+    openSheet(detailDlg);
+  }
 }
 
 function renderDetail() {
   if (!openId) return;
   const e = store.get(openId);
-  if (!e) { detailDlg.close(); return; }
+  if (!e) return;
   const total = totalOf(e);
   const next = nextOf(e);
   const hearts = Array.from({ length: 10 }, (_, k) => k + 1)
-    .map((n) => `<button class="heart${n <= e.score ? ' on' : ''}" data-score="${n}" role="radio" aria-checked="${n === e.score}" aria-label="${n} out of 10">♥</button>`)
+    .map((n) => `<button class="heart${n <= e.score ? ' on' : ''}" data-score="${n}" role="radio" aria-checked="${n === e.score}" aria-label="${n} out of 10">${HEART_SVG}</button>`)
     .join('');
+  const notes = $('#dNotes');
+  const draft = notes && notes.value !== e.notes ? notes.value : null; // keep unsaved typing
   detailDlg.innerHTML = `<div class="sheet detail" style="--tint:${tintOf(e)}">
+    <div class="grab" aria-hidden="true"></div>
     <button class="icon-btn close" data-close aria-label="Close">×</button>
     <div class="d-top">
       <img class="sticker big" src="${esc(e.cover_url)}" alt="">
@@ -355,7 +594,7 @@ function renderDetail() {
       <div class="hearts" role="radiogroup" aria-label="Rating">${hearts}</div>
     </section>
     <section class="d-sec"><h3>Notes <span class="dim" id="savedLbl"></span></h3>
-      <textarea id="dNotes" rows="3" placeholder="Favourite character, where you stopped, who recommended it…">${esc(e.notes)}</textarea>
+      <textarea id="dNotes" rows="3" placeholder="Favourite character, where you stopped, who recommended it…">${esc(draft ?? e.notes)}</textarea>
     </section>
     <button class="remove" data-remove>Remove from list</button>
   </div>`;
@@ -373,42 +612,41 @@ function flushNotes() {
   });
 }
 
-/* ---------- toast + sparkles ---------- */
+/* ---------- toast ---------- */
 
 const toastEl = $('#toast');
 let toastTimer;
-function toast(msg, action) {
+function toast(msg, action, withMochi = false) {
   // Lives inside an open modal dialog so its button stays clickable.
-  (document.querySelector('dialog[open]') || document.body).appendChild(toastEl);
-  toastEl.innerHTML = `<span>${esc(msg)}</span>${action ? `<button class="toast-btn">${esc(action.label)}</button>` : ''}`;
+  (document.querySelector('dialog[open]:not(.closing)') || document.body).appendChild(toastEl);
+  toastEl.classList.remove('show');
+  toastEl.innerHTML = `${withMochi ? mochi('wiggle') : ''}<span>${esc(msg)}</span>${action ? `<button class="toast-btn">${esc(action.label)}</button>` : ''}`;
   if (action) toastEl.querySelector('button').onclick = () => { toastEl.classList.remove('show'); action.fn(); };
+  void toastEl.offsetWidth;
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), action ? 6000 : 2600);
 }
 
-function burst(x = innerWidth / 2, y = innerHeight / 2) {
-  const host = document.querySelector('dialog[open]') || document.body;
-  const glyphs = ['✦', '✿', '♥', '★'];
-  for (let i = 0; i < 18; i++) {
-    const s = document.createElement('span');
-    const a = (Math.PI * 2 * i) / 18 + Math.random() * 0.4;
-    const r = 70 + Math.random() * 80;
-    s.className = 'spark';
-    s.textContent = glyphs[i % 4];
-    s.style.cssText = `left:${x}px;top:${y}px;--dx:${Math.cos(a) * r}px;--dy:${Math.sin(a) * r}px;--c:var(--c${i % 3})`;
-    host.appendChild(s);
-    setTimeout(() => s.remove(), 1000);
-  }
-}
-
 /* ---------- theme ---------- */
 
+const darkScheme = matchMedia('(prefers-color-scheme: dark)');
+const currentTheme = () => document.documentElement.dataset.theme || (darkScheme.matches ? 'dark' : 'light');
+
+// In the Android app, keep the status bar icons readable against the current theme.
+function syncSystemBars() {
+  window.Capacitor?.Plugins?.SystemBars?.setStyle?.({ style: currentTheme() === 'dark' ? 'DARK' : 'LIGHT' })?.catch?.(() => {});
+}
+darkScheme.addEventListener('change', syncSystemBars);
+
 function toggleTheme() {
-  const current = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const t = current === 'dark' ? 'light' : 'dark';
+  const t = currentTheme() === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('cc.theme', t); } catch {}
+  syncSystemBars();
+  $('#themeBtn').classList.remove('spin');
+  void $('#themeBtn').offsetWidth;
+  $('#themeBtn').classList.add('spin');
 }
 
 /* ---------- events ---------- */
@@ -418,38 +656,45 @@ let signOutArmed = false;
 
 document.addEventListener('click', (ev) => {
   const dlg = ev.target.closest('dialog');
-  if (dlg && ev.target === dlg) return dlg.close(); // backdrop tap
+  if (dlg && ev.target === dlg) return closeSheet(dlg); // backdrop tap
   const t = ev.target.closest('button');
   if (!t) return;
   const d = t.dataset;
 
   if (d.view) {
-    ui.view = d.view; saveUi(); render(); scrollTo(0, 0);
+    if (d.view === ui.view) return;
+    if (d.view === 'airing') history.pushState({ view: 'airing' }, '');
+    else if (history.state?.view === 'airing') return history.back(); // popstate switches the view
+    ui.view = d.view; saveUi(); render(true); scrollTo(0, 0);
   } else if (d.action === 'search') {
     openSearch();
   } else if (d.statusTab) {
-    ui.status = d.statusTab; saveUi(); render();
+    if (d.statusTab === ui.status) return;
+    ui.status = d.statusTab; saveUi(); render(true); revealActiveChip();
   } else if (d.kind) {
-    ui.kind = d.kind; saveUi(); render();
+    if (d.kind === ui.kind) return;
+    ui.kind = d.kind; render(true);
   } else if (d.plus) {
     const e = store.get(d.plus);
     const total = totalOf(e);
     if (total && e.progress >= total) toast('Already at the last episode ✿');
-    else setProgress(d.plus, e.progress + 1);
+    else setProgress(d.plus, e.progress + 1, t.getBoundingClientRect());
   } else if (d.open) {
     openDetail(d.open);
   } else if (d.suggest) {
     $('#q').value = d.suggest; onSearchInput();
   } else if (d.add) {
-    addFromSearch(Number(d.add), d.as);
+    addFromSearch(Number(d.add), d.as, t.getBoundingClientRect());
   } else if (d.setStatus) {
     setStatus(openId, d.setStatus);
   } else if (d.step) {
     setProgress(openId, store.get(openId).progress + Number(d.step));
   } else if (d.score) {
     const n = Number(d.score);
-    const e = store.get(openId);
-    safe(store.update(openId, { score: e.score === n ? 0 : n })).then(renderDetail);
+    const rect = t.getBoundingClientRect();
+    const score = store.get(openId).score === n ? 0 : n;
+    change(openId, { score });
+    if (score) heartsRipple(score, rect);
   } else if ('remove' in d) {
     if (removeArmed !== openId) {
       removeArmed = openId;
@@ -459,11 +704,14 @@ document.addEventListener('click', (ev) => {
     } else {
       const title = store.get(openId).title;
       safe(store.remove(openId));
-      detailDlg.close();
+      closeSheet(detailDlg);
       toast(`Removed ${title}`);
     }
   } else if ('close' in d) {
-    t.closest('dialog').close();
+    closeSheet(t.closest('dialog'));
+  } else if ('hidePromo' in d) {
+    try { localStorage.setItem('cc.appPromo', 'hidden'); } catch {}
+    t.closest('.app-promo').remove();
   } else if (t.id === 'themeBtn') {
     toggleTheme();
   } else if (t.id === 'signOutBtn') {
@@ -475,7 +723,7 @@ document.addEventListener('click', (ev) => {
 });
 
 document.addEventListener('change', (ev) => {
-  if (ev.target.id === 'sortSel') { ui.sort = ev.target.value; saveUi(); render(); }
+  if (ev.target.id === 'sortSel') { ui.sort = ev.target.value; saveUi(); render(true); }
   if (ev.target.id === 'dProg') setProgress(openId, parseInt(ev.target.value, 10));
 });
 
@@ -488,7 +736,24 @@ document.addEventListener('input', (ev) => {
   }
 });
 
+// Animations end by removing their trigger class, so they can play again next time.
+document.addEventListener('animationend', (ev) => {
+  ev.target.classList?.remove('squish', 'flip', 'pop', 'ripple', 'spin');
+});
+
+for (const dlg of [searchDlg, detailDlg]) {
+  dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); closeSheet(dlg); }); // Esc key
+  enableSwipe(dlg);
+}
 detailDlg.addEventListener('close', () => { flushNotes(); openId = null; });
+
+addEventListener('popstate', () => {
+  const open = document.querySelector('dialog[open]:not(.closing)');
+  if (open) return animateClose(open);
+  if (ui.view === 'airing' && history.state?.view !== 'airing') {
+    ui.view = 'list'; saveUi(); render(true); scrollTo(0, 0);
+  }
+});
 
 setInterval(() => {
   document.querySelectorAll('[data-cd]').forEach((el) => { el.textContent = countdown(Number(el.dataset.cd)); });
@@ -503,6 +768,7 @@ document.addEventListener('visibilitychange', () => {
 function showLogin() {
   $('#app').hidden = true;
   $('#login').hidden = false;
+  hideSplash();
   const err = $('#loginErr');
   let email = '';
   $('#loginForm').addEventListener('submit', async (ev) => {
@@ -546,12 +812,24 @@ function showApp(mode) {
     render();
     if (store.all().some((e) => !(e.anilist_id in airing) && !['completed', 'dropped'].includes(e.status))) loadAiring();
   });
-  render();
+  if (ui.view === 'airing') history.pushState({ view: 'airing' }, '');
+  render(true);
+  hideSplash();
   loadAiring();
 }
 
 async function boot() {
-  $('#greet').textContent = HER_NAME ? `hi ${HER_NAME} ✿` : 'anime & donghua shelf';
+  document.querySelectorAll('[data-subtitle]').forEach((el) => { el.textContent = SUBTITLE; });
+  if (isApp) {
+    document.documentElement.classList.add('is-app');
+    syncSystemBars();
+    // Android back: close the open sheet / leave Airing first, only then leave the app.
+    window.Capacitor.Plugins.App?.addListener('backButton', () => {
+      if (history.state?.sheet || history.state?.view) history.back();
+      else window.Capacitor.Plugins.App.minimizeApp();
+    });
+  }
+  ambient();
   let mode;
   try {
     mode = await store.init();
