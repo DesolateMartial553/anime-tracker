@@ -1,0 +1,19 @@
+{
+  "name": "cozy-corner-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "copy-web": "node scripts/copy-web.mjs",
+    "sync": "npm run copy-web && npx cap sync android",
+    "build:apk": "npm run sync && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

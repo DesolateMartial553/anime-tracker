@@ -3,5 +3,8 @@
 export const SUPABASE_URL = '';
 export const SUPABASE_ANON_KEY = '';
 
-// Optional: shown in the header greeting ("hi ___ ✿").
-export const HER_NAME = '';
+// Shown under "cozy corner" in the header and on the splash screen.
+export const SUBTITLE = 'just for my sweet princess';
+
+// Where the "Get the app" banner on Android points.
+export const APK_URL = 'https://github.com/DesolateMartial553/anime-tracker/releases/latest/download/CozyCorner.apk';

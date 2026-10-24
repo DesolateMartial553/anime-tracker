@@ -1,0 +1,8 @@
+{
+  "appId": "com.desolatemartial.cozycorner",
+  "appName": "Cozy Corner",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#fff6ee"
+  }
+}

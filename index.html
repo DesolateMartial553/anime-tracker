@@ -12,20 +12,33 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" href="fonts/fredoka-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
   <script>try { const t = localStorage.getItem('cc.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
+  <div id="ambient" aria-hidden="true"></div>
+  <div id="splash" aria-hidden="true">
+    <svg class="mochi" viewBox="0 0 120 100">
+      <path d="M24 44 L30 12 L52 32 Z" class="m-body m-ear m-ear-l"/>
+      <path d="M96 44 L90 12 L68 32 Z" class="m-body m-ear m-ear-r"/>
+      <ellipse cx="60" cy="62" rx="48" ry="34" class="m-body"/>
+      <g class="m-eyes"><circle cx="44" cy="60" r="4.5" class="m-ink"/><circle cx="76" cy="60" r="4.5" class="m-ink"/></g>
+      <ellipse cx="34" cy="70" rx="7" ry="4" class="m-blush"/><ellipse cx="86" cy="70" rx="7" ry="4" class="m-blush"/>
+      <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
+    </svg>
+    <h1>cozy corner</h1>
+    <p data-subtitle>just for my sweet princess</p>
+  </div>
   <div id="app">
     <header class="top">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">✿</span>
         <div>
           <h1>cozy corner</h1>
-          <p class="greet" id="greet"></p>
+          <p class="greet" data-subtitle>just for my sweet princess</p>
         </div>
       </div>
 
@@ -60,10 +73,11 @@
 
   <div id="login" class="login" hidden>
     <div class="login-card">
-      <svg class="mochi" viewBox="0 0 120 100" aria-hidden="true">
-        <path d="M24 44 L30 12 L52 32 Z M96 44 L90 12 L68 32 Z" class="m-body"/>
+      <svg class="mochi alive" viewBox="0 0 120 100" aria-hidden="true">
+        <path d="M24 44 L30 12 L52 32 Z" class="m-body m-ear m-ear-l"/>
+        <path d="M96 44 L90 12 L68 32 Z" class="m-body m-ear m-ear-r"/>
         <ellipse cx="60" cy="62" rx="48" ry="34" class="m-body"/>
-        <circle cx="44" cy="60" r="4.5" class="m-ink"/><circle cx="76" cy="60" r="4.5" class="m-ink"/>
+        <g class="m-eyes"><circle cx="44" cy="60" r="4.5" class="m-ink"/><circle cx="76" cy="60" r="4.5" class="m-ink"/></g>
         <ellipse cx="34" cy="70" rx="7" ry="4" class="m-blush"/><ellipse cx="86" cy="70" rx="7" ry="4" class="m-blush"/>
         <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
       </svg>
@@ -86,6 +100,7 @@
 
   <dialog id="searchDlg" class="sheet-dlg search-dlg" aria-label="Add a show">
     <div class="sheet">
+      <div class="grab" aria-hidden="true"></div>
       <div class="search-bar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
         <input id="q" type="search" placeholder="Search anime or donghua…" autocomplete="off" enterkeyhint="search" aria-label="Search">
