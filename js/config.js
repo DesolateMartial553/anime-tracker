@@ -1,7 +1,7 @@
 // Fill these in from Supabase → Project Settings → API to turn on syncing.
 // Left empty, the app saves to this browser only.
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+export const SUPABASE_URL = 'https://xnojrucnzrrgafmxnojh.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_-xaX0yD8kcJXDnlH_6bjFw_iCKLGST-';
 
 // Shown under "cozy corner" in the header and on the splash screen.
 export const SUBTITLE = 'just for my sweet princess';
