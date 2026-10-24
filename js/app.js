@@ -905,7 +905,7 @@ function showLogin() {
       $('#loginForm').hidden = true;
       $('#codeForm').hidden = false;
       $('#sentTo').textContent = email;
-      if (isApp) $('#codeHint').textContent = 'Open the email on this phone and tap the link: it will bring you straight back here, signed in.';
+      if (isApp) $('#codeHint').textContent = 'Open the email on this phone and tap the link: it brings you straight back here, signed in. Or type the 6-digit code from the email below.';
       $('#code').focus();
     } catch (e) {
       err.textContent = e.message || 'Could not send the email.';

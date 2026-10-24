@@ -101,19 +101,29 @@ It remembers the choice.
 
 ---
 
-## 💾 Where her list is saved (please read)
+## 💾 Where her list is saved, and syncing
 
-Right now, **each device keeps its own list**. The app on her phone and the website on her laptop
-don't share data yet, and two different browsers don't share either.
+Her list syncs between her phone and laptop once she signs in. It is stored in a free Supabase
+database that only she can read, and a copy is also kept on each device so the app opens instantly
+and still shows her shelf offline.
 
-- The list is saved on the device automatically and survives closing the app or browser.
-- Clearing the browser's site data, or uninstalling the app, deletes that device's list,
-  so make a **backup code** first (see *Back up or move her list* above).
+### Signing in (one time per device)
+1. Open the app or the website. On first launch it asks for her **email address**: enter it and tap
+   **Send me a sign-in email**.
+2. Open the email titled **"Your Cozy Corner sign-in ✿"** (check Spam the first time).
+3. **Tap "Tap here to sign in".** On the phone, the link opens the Cozy Corner app and signs her in.
+   On the laptop it signs her in on the website. *Alternatively*, type the **6-digit code** from the
+   email into the box on the sign-in screen.
+4. Her shelf appears. Anything she had saved on that device before signing in is uploaded
+   automatically, so nothing is lost.
 
-**Syncing between devices** is built in but switched off until a free Supabase database is connected.
-Once it's on, she signs in with her email (no password: she gets a sign-in email and taps the link,
-or types the 6-digit code into the app) and the same list appears everywhere. Anything already saved
-on a device is uploaded the first time she signs in. Setup steps are in the developer notes below.
+Links and codes only work once and expire after a while. If one says it has expired, just request a new email.
+She stays signed in. To sign out, tap the **sign-out button** (top right) twice.
+
+- Changes are saved immediately and appear on her other device the next time she opens it.
+- If she is offline, the shelf still shows, but changes may fail to save until she's back online.
+- Clearing browser data on a device only removes that device's copy; her list is safe in the database.
+- It is still worth making a **backup code** now and then (see *Back up or move her list*).
 
 ---
 
@@ -158,14 +168,12 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
   `~/.keystores/cozy-corner.properties`, never committed). **Keep a backup:** Android only installs an
   update signed with the same key.
 
-### Turn on sync (Supabase)
-
-1. Create a free project at https://supabase.com.
-2. **SQL Editor → New query →** paste `supabase.sql` **→ Run**.
-3. **Project Settings → API:** copy the Project URL and anon/publishable key into `js/config.js`.
-   (The anon key is meant to be public; row-level security keeps each person's list private.)
-4. **Authentication → URL Configuration:** set the Site URL to the GitHub Pages URL and add it to Redirect URLs.
-5. **Authentication → Email Templates → Magic Link:** add `{{ .Token }}` so the email includes a code.
-   Inside the Android app she types the code, because the email link opens the browser, not the app.
-6. Optional: after she has signed in, turn off new sign-ups under **Authentication → Sign In / Providers**.
-7. Push the website, then build and publish a new APK so the app gets the keys too.
+### Sync (Supabase), already set up
+- Project URL and publishable key are in `js/config.js` (the key is meant to be public;
+  row-level security in `supabase.sql` keeps each person's list private).
+- Auth settings: Site URL is the GitHub Pages address, and Redirect URLs include it plus
+  `com.desolatemartial.cozycorner://login` (the app's deep link).
+- Sign-in emails are sent through custom SMTP (Gmail app password) so the limit is 30/hour and the
+  templates (Confirm signup and Magic link) include `{{ .ConfirmationURL }}` and `{{ .Token }}`.
+- Free plan note: Supabase pauses a project after about a week with no activity. If sync stops,
+  open the Supabase dashboard and click **Restore project**.
