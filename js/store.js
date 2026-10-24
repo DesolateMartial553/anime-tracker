@@ -2,6 +2,8 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const SUPABASE_ESM = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
 const LOCAL_KEY = 'cc.local.v1';
+// Email links opened on the phone come back into the Android app through this address.
+const APP_REDIRECT = 'com.desolatemartial.cozycorner://login';
 const COLUMNS = ['id', 'user_id', 'anilist_id', 'title', 'title_native', 'cover_url', 'cover_color',
   'total_eps', 'format', 'country', 'year', 'status', 'progress', 'score', 'notes', 'created_at', 'updated_at'];
 
@@ -175,9 +177,21 @@ export async function importBackup(text) {
 export async function sendLoginEmail(email) {
   const { error } = await sb.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: location.origin + location.pathname },
+    options: { emailRedirectTo: window.Capacitor?.isNativePlatform?.() ? APP_REDIRECT : location.origin + location.pathname },
   });
   if (error) throw error;
+}
+
+// The Android app receives the email link as com.desolatemartial.cozycorner://login#access_token=…
+export async function signInFromLink(url) {
+  const params = new URLSearchParams((url.split('#')[1] || url.split('?')[1] || ''));
+  if (params.get('error')) throw new Error(params.get('error_code') || 'link_error');
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
+  if (!access_token || !refresh_token) throw new Error('link_error');
+  const { data, error } = await sb.auth.setSession({ access_token, refresh_token });
+  if (error) throw error;
+  await startCloud(data.user);
 }
 
 // For the home-screen app: she can type the 6-digit code instead of tapping the link.

@@ -92,7 +92,7 @@
         <button class="pill big" type="submit">Send me a sign-in email</button>
       </form>
       <form id="codeForm" hidden>
-        <p>Sent to <b id="sentTo"></b> ✿<br>Tap the link in the email, or type the code here:</p>
+        <p>Sent to <b id="sentTo"></b> ✿<br><span id="codeHint">Tap the link in the email to sign in, or type the code here if the email has one:</span></p>
         <input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" placeholder="123456" aria-label="Sign-in code">
         <button class="pill big" type="submit">Sign in</button>
         <button class="link" type="button" id="backBtn">Use a different email</button>

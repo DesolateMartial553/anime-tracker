@@ -905,6 +905,7 @@ function showLogin() {
       $('#loginForm').hidden = true;
       $('#codeForm').hidden = false;
       $('#sentTo').textContent = email;
+      if (isApp) $('#codeHint').textContent = 'Open the email on this phone and tap the link: it will bring you straight back here, signed in.';
       $('#code').focus();
     } catch (e) {
       err.textContent = e.message || 'Could not send the email.';
@@ -921,6 +922,25 @@ function showLogin() {
       err.textContent = 'That code didn’t work. Check it, or send a new email.';
     }
   });
+  if (isApp) {
+    // Tapping the email link on the phone reopens the app with the sign-in details.
+    let done = false;
+    const fromLink = async (url) => {
+      if (done || !url?.startsWith('com.desolatemartial.cozycorner://')) return;
+      try {
+        await store.signInFromLink(url);
+        done = true;
+        showApp('cloud');
+      } catch (e) {
+        err.textContent = e.message === 'otp_expired'
+          ? 'That sign-in link has expired or was already used. Send yourself a new one ✿'
+          : 'That sign-in link didn’t work. Send yourself a new one ✿';
+      }
+    };
+    const App = window.Capacitor.Plugins.App;
+    App.addListener('appUrlOpen', ({ url }) => fromLink(url));
+    App.getLaunchUrl?.().then((r) => fromLink(r?.url)).catch(() => {});
+  }
   $('#backBtn').addEventListener('click', () => {
     $('#codeForm').hidden = true;
     $('#loginForm').hidden = false;
