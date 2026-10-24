@@ -886,6 +886,14 @@ function showLogin() {
   hideSplash();
   const err = $('#loginErr');
   let email = '';
+  // Supabase sends people back with #error=... when a link is expired or already used.
+  const back = new URLSearchParams(location.hash.slice(1));
+  if (back.get('error')) {
+    err.textContent = back.get('error_code') === 'otp_expired'
+      ? 'That sign-in link has expired or was already used. Send yourself a new one ✿'
+      : 'That sign-in link didn’t work. Send yourself a new one ✿';
+    history.replaceState(null, '', location.pathname);
+  }
   $('#loginForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     err.textContent = '';
