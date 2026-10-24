@@ -35,12 +35,16 @@ const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const searchDlg = $('#searchDlg');
 const detailDlg = $('#detailDlg');
+const settingsDlg = $('#settingsDlg');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // The Anime/Donghua filter isn't remembered, so a forgotten filter never hides half her shelf.
 const saveUi = () => { try { localStorage.setItem('cc.ui', JSON.stringify({ ...ui, kind: 'all' })); } catch {} };
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const buzz = (ms = 12) => { try { navigator.vibrate?.(ms); } catch {} };
 const isApp = Boolean(window.Capacitor?.isNativePlatform?.());
+const VERSION_URL = 'https://desolatemartial553.github.io/anime-tracker/version.json';
+let appInfo = null; // { version, build } of the installed app
+let update = null; // version.json contents when a newer app build is published
 
 const isDonghua = (e) => e.country === 'CN';
 const tintOf = (e) => (/^#[0-9a-f]{6}$/i.test(e.cover_color || '') ? e.cover_color : '#ff8fb8');
@@ -119,6 +123,18 @@ function appPromo() {
   </div>`;
 }
 
+function updateCard() {
+  let dismissed = null;
+  try { dismissed = localStorage.getItem('cc.updateDismissed'); } catch {}
+  if (!update || dismissed === String(update.versionCode)) return '';
+  return `<div class="app-promo update-card">
+    ${mochi('alive')}
+    <div><b>Cozy Corner ${esc(update.versionName)} is ready ✿</b><small>${esc(update.notes || 'A fresh update with little improvements.')}</small></div>
+    <a class="pill" href="${esc(update.apk || APK_URL)}">Update</a>
+    <button class="icon-btn" data-hide-update aria-label="Remind me later">×</button>
+  </div>`;
+}
+
 function renderList() {
   const list = store.all();
   const count = (k) => list.filter((e) => e.status === k).length;
@@ -134,6 +150,7 @@ function renderList() {
 
   const opt = (v, l) => `<option value="${v}"${v === ui.sort ? ' selected' : ''}>${l}</option>`;
   main.innerHTML = `
+    ${updateCard()}
     <div class="chips scroll" role="tablist" aria-label="Lists">
       <span class="ind" aria-hidden="true"></span>
       ${STATUSES.map(([k, l]) => `<button class="chip${k === ui.status ? ' on' : ''}" role="tab" aria-selected="${k === ui.status}" data-status-tab="${k}">${l}<span class="count">${count(k)}</span></button>`).join('')}
@@ -612,6 +629,77 @@ function flushNotes() {
   });
 }
 
+/* ---------- backup + app info sheet ---------- */
+
+function renderSettings() {
+  const count = store.all().length;
+  $('#settingsBody').innerHTML = `
+    <h2>Your shelf</h2>
+    <p class="dim">${count} show${count === 1 ? '' : 's'} saved${store.cloudEnabled ? '' : ' on this device'}.</p>
+    <section class="d-sec"><h3>Back up</h3>
+      <p class="dim small">Copies your whole list as a code. Paste it into a note or a message to yourself to keep it safe, or to move it to another device.</p>
+      <button class="pill" data-backup>Copy backup code</button>
+      <textarea id="backupOut" rows="3" readonly hidden aria-label="Backup code"></textarea>
+    </section>
+    <section class="d-sec"><h3>Restore or move</h3>
+      <p class="dim small">Paste a backup code from another device. New shows are added, and for shows on both, the most recent change wins. Nothing gets deleted.</p>
+      <textarea id="restoreIn" rows="3" placeholder="Paste a backup code here…" aria-label="Backup code to restore"></textarea>
+      <button class="pill soft" data-restore>Restore</button>
+    </section>
+    <section class="d-sec"><h3>App</h3>
+      ${isApp
+        ? `<p class="dim small">Version ${esc(appInfo?.version || '?')}</p>
+           <button class="pill soft" data-check-update>Check for updates</button>
+           <p class="dim small" id="updateMsg"></p>`
+        : `<p class="dim small">On an Android phone? <a class="al-link" href="${APK_URL}">Get the Cozy Corner app</a></p>`}
+    </section>`;
+}
+
+async function copyBackup() {
+  const code = store.exportBackup();
+  try {
+    await navigator.clipboard.writeText(code);
+    toast('Backup copied ✿ Paste it somewhere safe');
+  } catch {
+    // Clipboard blocked: show the code so it can be copied by hand.
+    const out = $('#backupOut');
+    out.hidden = false;
+    out.value = code;
+    out.select();
+    toast('Select the code below and copy it');
+  }
+}
+
+async function restoreBackup() {
+  const text = $('#restoreIn').value.trim();
+  if (!text) return toast('Paste a backup code first');
+  try {
+    const { added, updated } = await store.importBackup(text);
+    $('#restoreIn').value = '';
+    renderSettings();
+    if (added || updated) celebrate();
+    toast(added || updated ? `Restored ✿ ${added} added, ${updated} updated` : 'Everything was already up to date ✿');
+  } catch (err) {
+    toast(err instanceof SyntaxError || err.message === 'not a backup' ? "That doesn't look like a Cozy Corner backup code" : "Couldn't save that. Check your connection and try again.");
+  }
+}
+
+// The app compares its installed build with version.json on the website.
+async function checkForUpdate() {
+  if (!isApp) return null;
+  try {
+    appInfo ??= await window.Capacitor.Plugins.App.getInfo();
+    const res = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    const v = await res.json();
+    update = Number(v.versionCode) > Number(appInfo.build) ? v : null;
+    try { localStorage.setItem('cc.updateChecked', String(Date.now())); } catch {}
+    render();
+  } catch (err) {
+    console.warn('update check failed', err);
+  }
+  return update;
+}
+
 /* ---------- toast ---------- */
 
 const toastEl = $('#toast');
@@ -657,6 +745,13 @@ let signOutArmed = false;
 document.addEventListener('click', (ev) => {
   const dlg = ev.target.closest('dialog');
   if (dlg && ev.target === dlg) return closeSheet(dlg); // backdrop tap
+  // Inside the app, links to other sites must open in the phone's browser.
+  const link = ev.target.closest('a[href^="http"]');
+  if (link && isApp) {
+    ev.preventDefault();
+    location.href = link.href;
+    return;
+  }
   const t = ev.target.closest('button');
   if (!t) return;
   const d = t.dataset;
@@ -709,6 +804,22 @@ document.addEventListener('click', (ev) => {
     }
   } else if ('close' in d) {
     closeSheet(t.closest('dialog'));
+  } else if ('hideUpdate' in d) {
+    try { localStorage.setItem('cc.updateDismissed', String(update?.versionCode)); } catch {}
+    t.closest('.update-card').remove();
+  } else if ('backup' in d) {
+    copyBackup();
+  } else if ('restore' in d) {
+    restoreBackup();
+  } else if ('checkUpdate' in d) {
+    $('#updateMsg').textContent = 'Checking…';
+    checkForUpdate().then((u) => {
+      const msg = $('#updateMsg');
+      if (msg) msg.textContent = u ? `Version ${u.versionName} is ready: tap Update on your shelf ✿` : "You're on the newest version ✿";
+    });
+  } else if (t.id === 'settingsBtn') {
+    renderSettings();
+    openSheet(settingsDlg);
   } else if ('hidePromo' in d) {
     try { localStorage.setItem('cc.appPromo', 'hidden'); } catch {}
     t.closest('.app-promo').remove();
@@ -741,7 +852,7 @@ document.addEventListener('animationend', (ev) => {
   ev.target.classList?.remove('squish', 'flip', 'pop', 'ripple', 'spin');
 });
 
-for (const dlg of [searchDlg, detailDlg]) {
+for (const dlg of [searchDlg, detailDlg, settingsDlg]) {
   dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); closeSheet(dlg); }); // Esc key
   enableSwipe(dlg);
 }
@@ -760,7 +871,11 @@ setInterval(() => {
 }, 30000);
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') loadAiring();
+  if (document.visibilityState !== 'visible') return;
+  loadAiring();
+  let last = 0;
+  try { last = Number(localStorage.getItem('cc.updateChecked')) || 0; } catch {}
+  if (Date.now() - last > 6 * 3600 * 1000) checkForUpdate();
 });
 
 /* ---------- login ---------- */
@@ -816,6 +931,7 @@ function showApp(mode) {
   render(true);
   hideSplash();
   loadAiring();
+  checkForUpdate();
 }
 
 async function boot() {

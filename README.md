@@ -25,8 +25,18 @@ It comes two ways, built from the same code:
    and the vibration motor (for little taps of feedback).
 5. Open **Cozy Corner** from the home screen: it's the pink icon with the white cat. ✿
 
-**Updating:** when a new version is published, download and install the APK the same way. It installs
-over the old one and **keeps her list**. *(Uninstalling the app first would delete the list, so don't.)*
+### Updating the app
+- When a new version is published, a pink card appears at the top of her shelf:
+  **"Cozy Corner 1.x is ready ✿"**. Tap **Update**, open the downloaded file and tap **Install**.
+  It installs over the old version and **keeps her list**.
+- The app checks when it opens, and again whenever she comes back to it (at most every 6 hours).
+  She can also check by hand: tap the **sliders button** (top right) → **Check for updates**.
+- Tapping **×** on the card hides it until the next version comes out.
+- *Never uninstall the app to update it: uninstalling deletes the list on that phone.*
+
+**Optional, fully automatic updates:** install [Obtainium](https://github.com/ImranR98/Obtainium)
+(free), tap **Add App**, paste `https://github.com/DesolateMartial553/anime-tracker` and save.
+It will notify her about new releases and can install them in the background.
 
 ---
 
@@ -76,6 +86,15 @@ Tap a show's cover or title to open its details sheet:
 **Airing** (bottom bar) lists the next episode of every currently airing show on her lists,
 grouped by day (**Today**, **Tomorrow**, …) with the time in her own time zone.
 
+### Back up or move her list
+Tap the **sliders button** at the top right (next to 🌙):
+- **Copy backup code** copies her whole list as a block of text. Paste it into a note, or send it
+  to herself in a chat, to keep it safe.
+- **Restore or move:** paste a backup code and tap **Restore**. Shows she doesn't have yet are added.
+  For shows on both, the most recently changed version is kept, and nothing is ever deleted.
+- To move her list from the phone app to the laptop website (or back): copy the code on one, send it to
+  herself, and restore it on the other. Do this before reinstalling the app or clearing browser data.
+
 ### Light / dark
 Tap the 🌙 / ☀️ button at the top right. Day mode has drifting sakura petals, night mode has twinkling stars.
 It remembers the choice.
@@ -88,7 +107,8 @@ Right now, **each device keeps its own list**. The app on her phone and the webs
 don't share data yet, and two different browsers don't share either.
 
 - The list is saved on the device automatically and survives closing the app or browser.
-- Clearing the browser's site data, or uninstalling the app, deletes that device's list.
+- Clearing the browser's site data, or uninstalling the app, deletes that device's list,
+  so make a **backup code** first (see *Back up or move her list* above).
 
 **Syncing between devices** is built in but switched off until a free Supabase database is connected.
 Once it's on, she signs in with her email (no password: she gets a sign-in email and taps the link,
@@ -111,6 +131,7 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
 | `supabase.sql` | Database table + row-level security policies |
 | `app/` | Capacitor Android project that wraps the website |
 | `download/CozyCorner.apk` | The current signed Android build |
+| `version.json` | Latest app version; installed apps check this to offer updates |
 
 ### Run the website locally
 
@@ -125,7 +146,14 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
     cd android && ./gradlew assembleRelease --offline --max-workers=1
     cp app/build/outputs/apk/release/app-release.apk ../../download/CozyCorner.apk
 
-- Increase `versionCode` (and `versionName`) in `app/android/app/build.gradle` before each new release.
+### Publishing an update
+1. Increase `versionCode` (and `versionName`) in `app/android/app/build.gradle`.
+2. Build the APK (above) and copy it to `download/CozyCorner.apk`.
+3. Set the same `versionCode` / `versionName` (and a one-line `notes`) in `version.json`.
+4. Commit and push. Installed apps see the new `version.json` and show the update card.
+5. Optional: also attach the APK to a new GitHub Release so Obtainium picks it up
+   (`gh release create v1.x.0 download/CozyCorner.apk`).
+
 - Release builds are signed with `~/.keystores/cozy-corner.jks` (settings in
   `~/.keystores/cozy-corner.properties`, never committed). **Keep a backup:** Android only installs an
   update signed with the same key.
