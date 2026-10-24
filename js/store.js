@@ -128,6 +128,50 @@ export async function remove(id) {
   }
 }
 
+const STATUSES = ['watching', 'planning', 'completed', 'paused', 'dropped'];
+
+// Backup code = the list without ids, so it can be restored on any device or account.
+export function exportBackup() {
+  const shows = entries.map(({ id, user_id, ...rest }) => rest);
+  return JSON.stringify({ app: 'cozy-corner', v: 1, exported: new Date().toISOString(), shows });
+}
+
+// Merges a backup in: new shows are added; for shows on both sides the newer edit wins.
+export async function importBackup(text) {
+  const data = JSON.parse(text);
+  if (data?.app !== 'cozy-corner' || !Array.isArray(data.shows)) throw new Error('not a backup');
+  const byShow = new Map(entries.map((e) => [e.anilist_id, e]));
+  const changed = [];
+  let added = 0, updated = 0;
+  for (const s of data.shows) {
+    if (!s || !Number.isInteger(s.anilist_id) || typeof s.title !== 'string') continue;
+    if (!STATUSES.includes(s.status)) s.status = 'planning';
+    const have = byShow.get(s.anilist_id);
+    if (!have) {
+      const row = pick({ progress: 0, score: 0, notes: '', ...s, id: crypto.randomUUID() });
+      if (user) row.user_id = user.id;
+      byShow.set(s.anilist_id, row);
+      changed.push(row);
+      added++;
+    } else if ((s.updated_at || '') > (have.updated_at || '')) {
+      const row = pick({ ...have, ...s, id: have.id, user_id: have.user_id });
+      byShow.set(s.anilist_id, row);
+      changed.push(row);
+      updated++;
+    }
+  }
+  entries = [...byShow.values()];
+  emit();
+  if (sb && user && changed.length) {
+    const { error } = await sb.from('entries').upsert(changed, { onConflict: 'id' });
+    if (error) {
+      await refresh().catch(() => {});
+      throw error;
+    }
+  }
+  return { added, updated };
+}
+
 export async function sendLoginEmail(email) {
   const { error } = await sb.auth.signInWithOtp({
     email,

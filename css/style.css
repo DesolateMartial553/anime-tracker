@@ -591,3 +591,10 @@ main.animate .card, main.animate .day li, main.animate .empty, main.animate .air
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .spark, .float-up, #ambient { display: none; }
 }
+
+/* update card sits at the top of the shelf */
+.update-card { margin: 4px auto 12px; background: var(--pink-soft); }
+.small { font-size: 0.88rem; margin: 0 0 10px; }
+#settingsBody h2 { font-size: 1.3rem; padding-right: 48px; }
+#settingsBody textarea { margin: 0 0 10px; font-size: 0.85rem; }
+#settingsBody .d-sec .pill { margin-bottom: 4px; }
