@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3",
+  "versionCode": 5,
+  "versionName": "1.4",
   "apk": "https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk",
-  "notes": "New 'For you' picks, a fresh glass look, and you can set your own episode count."
+  "notes": "Glassy little loading shapes while things load, and a softer glow around your covers."
 }
