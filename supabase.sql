@@ -30,3 +30,48 @@ create policy "read own entries"   on public.entries for select using (auth.uid(
 create policy "add own entries"    on public.entries for insert with check (auth.uid() = user_id);
 create policy "edit own entries"   on public.entries for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "remove own entries" on public.entries for delete using (auth.uid() = user_id);
+
+-- ============================================================
+--  Couple sharing (paste this whole file — one run each time it changes)
+--  Each person keeps their own shelf; a couple row lets your person
+--  read your shows from Cozy Corner (and you theirs). Nobody writes
+--  to anyone else's rows.
+-- ============================================================
+
+create table if not exists public.couples (
+  a          uuid not null references auth.users (id) on delete cascade,
+  b          uuid     references auth.users (id) on delete cascade,
+  code       text not null unique default
+             upper(substr(replace(replace(md5(random()::text), '/', ''), '+', ''), 1, 9)),
+  created_at timestamptz not null default now(),
+  primary key (a)
+);
+
+alter table public.couples enable row level security;
+
+create policy "see own couple row" on public.couples for select
+  using (a = auth.uid() or b = auth.uid() or b is null);
+
+create policy "start an invite" on public.couples for insert
+  with check (a = auth.uid() and b is null);
+
+-- Everyone signed in may fill an open invite's empty seat (the code is the secret).
+create policy "accept an invite" on public.couples for update
+  using (b is null) with check (a = auth.uid() or b = auth.uid());
+
+create policy "unpair" on public.couples for delete
+  using (a = auth.uid() or b = auth.uid());
+
+-- Entries: your person can read yours, still only you can change them.
+create policy "partner can read" on public.entries for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1 from public.couples c
+      where c.b is not null
+        and (
+          (c.a = auth.uid() and c.b = entries.user_id)
+          or (c.b = auth.uid() and c.a = entries.user_id)
+        )
+    )
+  );
