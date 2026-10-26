@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -30,12 +30,18 @@ let openId = null;
 let airing = {};
 let airingLoaded = false;
 let lastResults = [];
+// "For you": sections of suggestions, plus a lookup of every suggestion we've fetched.
+let recs = { sig: null, loading: false, error: false, sections: [] };
+const recShows = new Map();
+let previewId = null;
+let editingTotal = false;
 
 const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const searchDlg = $('#searchDlg');
 const detailDlg = $('#detailDlg');
 const settingsDlg = $('#settingsDlg');
+const previewDlg = $('#previewDlg');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // The Anime/Donghua filter isn't remembered, so a forgotten filter never hides half her shelf.
 const saveUi = () => { try { localStorage.setItem('cc.ui', JSON.stringify({ ...ui, kind: 'all' })); } catch {} };
@@ -74,6 +80,36 @@ function badges(e) {
 }
 
 /* ---------- list view ---------- */
+
+function shelfStats(list) {
+  let eps = 0, rated = 0, sum = 0, airingNext = 0;
+  for (const e of list) {
+    eps += e.progress || 0;
+    if (e.score) { rated++; sum += e.score; }
+    if (nextOf(e)) airingNext++;
+  }
+  return {
+    shows: list.length,
+    eps,
+    avg: rated ? `${(sum / rated).toFixed(1)} / 10` : '—',
+    airingNext,
+  };
+}
+
+function statsStrip(s) {
+  if (!s.shows) return '';
+  const tiles = [
+    [HEART, 'Shows', s.shows],
+    ['▶', 'Episodes', s.eps],
+    ['✿', 'Avg rating', s.avg],
+    ['✦', 'Airing next', s.airingNext],
+  ];
+  return `<div class="stats" aria-label="Shelf stats">${tiles.map(([ico, label, val], i) =>
+    `<div class="stat" style="--tint:var(--c${i % 3})">
+       <span class="stat-ico" aria-hidden="true">${ico}</span>
+       <div><small>${label}</small><b>${esc(String(val))}</b></div>
+     </div>`).join('')}</div>`;
+}
 
 function card(e, i) {
   const total = totalOf(e);
@@ -138,8 +174,7 @@ function updateCard() {
 function renderList() {
   const list = store.all();
   const count = (k) => list.filter((e) => e.status === k).length;
-  let items = list.filter((e) => e.status === ui.status);
-  if (ui.kind === 'anime') items = items.filter((e) => !isDonghua(e));
+  let items = list.filter((e) => e.status === ui.status);  if (ui.kind === 'anime') items = items.filter((e) => !isDonghua(e));
   if (ui.kind === 'donghua') items = items.filter(isDonghua);
   const sorters = {
     updated: (a, b) => b.updated_at.localeCompare(a.updated_at),
@@ -165,6 +200,7 @@ function renderList() {
       </select>
     </div>
     ${items.length ? `<div class="cards">${items.map(card).join('')}</div>` : emptyState()}
+    ${statsStrip(shelfStats(list))}
     ${appPromo()}
     ${store.cloudEnabled ? '' : '<p class="local-note">Saved on this device only.</p>'}`;
 }
@@ -209,6 +245,142 @@ function renderAiring() {
   main.innerHTML = `<div class="air-head"><h2>Airing soon</h2><p class="dim">Next episodes of shows on your lists, in your time zone.</p></div>${body}`;
 }
 
+/* ---------- "For you" ---------- */
+
+const WHY = {
+  watching: "Because you're watching",
+  completed: 'Because you finished',
+  paused: "Because you're partway through",
+  planning: "Because it's on your list",
+};
+
+// The shows worth building suggestions from: what she's watching now first,
+// then what she finished, then the rest. Six is plenty and keeps the API happy.
+function recSources() {
+  const rank = { watching: 0, completed: 1, paused: 2, planning: 3 };
+  return store.all()
+    .filter((e) => e.status in rank)
+    .sort((a, b) => rank[a.status] - rank[b.status] || (b.updated_at || '').localeCompare(a.updated_at || ''))
+    .slice(0, 6)
+    .map((e) => ({ anilist_id: e.anilist_id, title: e.title, status: e.status, country: e.country }));
+}
+
+async function loadRecs({ force = false } = {}) {
+  if (recs.loading) return;
+  const sources = recSources();
+  const sig = sources.map((s) => `${s.anilist_id}:${s.status}`).join(',');
+  if (!force && sig === recs.sig) return; // nothing changed since the last fetch
+  const keep = sig === recs.sig ? recs.sections : [];
+  recs = { sig, loading: true, error: false, sections: keep };
+  if (ui.view === 'foryou') renderForYou();
+  try {
+    if (force) clearRecommendationCache();
+    const sections = sources.length ? await getRecommendations(sources) : [];
+    for (const s of sections) for (const it of s.items) recShows.set(it.anilist_id, it);
+    recs = { sig, loading: false, error: false, sections };
+  } catch (err) {
+    console.warn('recommendations failed', err);
+    recs = { sig, loading: false, error: true, sections: keep };
+  }
+  if (ui.view === 'foryou') renderForYou();
+}
+
+const cut = (s, n) => (s.length > n ? s.slice(0, s.lastIndexOf(' ', n)) + '…' : s);
+
+function recSection(s, i) {
+  return `<section class="rec" style="--i:${Math.min(i, 8)}">
+    <h3>${WHY[s.status] || 'Because you liked'} <b>${esc(s.title)}</b></h3>
+    <ul class="rec-row">${s.items.slice(0, 8).map((it, k) => `
+      <li style="--tint:${tintOf(it)};--i:${k}">
+        <button class="rec-tile" data-preview="${it.anilist_id}" aria-label="More about ${esc(it.title)}">
+          <span class="rec-cover">
+            <img src="${esc(it.cover_url)}" alt="" loading="lazy">
+            <span class="rec-plus" aria-hidden="true">+</span>
+          </span>
+          <span class="rec-name">${esc(it.title)}</span>
+          <span class="rec-meta">${isDonghua(it) ? 'Donghua' : 'Anime'}${it.year ? ` · ${it.year}` : ''}${it.total_eps ? ` · ${it.total_eps} ep` : ''}</span>
+        </button>
+      </li>`).join('')}
+    </ul>
+  </section>`;
+}
+
+function renderForYou() {
+  const head = `<div class="air-head rec-head">
+    <div><h2>For you</h2><p class="dim">Picked from what's on your shelf.</p></div>
+    <button class="icon-btn" data-rec-refresh aria-label="Find new suggestions">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+    </button>
+  </div>`;
+
+  if (!store.all().length) {
+    main.innerHTML = `${head}<div class="empty">${mochi('alive')}
+      <p>Add a few shows to your shelf and this page will start suggesting more like them.</p>
+      <button class="pill" data-action="search">Find something to watch</button></div>`;
+    return;
+  }
+
+  // Shows she already added shouldn't be suggested again.
+  const sections = recs.sections
+    .map((s) => ({ ...s, items: s.items.filter((it) => !store.findByAnilist(it.anilist_id)) }))
+    .filter((s) => s.items.length);
+
+  let body;
+  if (sections.length) body = sections.map(recSection).join('');
+  else if (recs.loading) body = '<div class="loading" aria-label="Finding shows you might like"><span></span><span></span><span></span></div>';
+  else if (recs.error) body = `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
+  else body = `<div class="empty">${mochi('alive')}<p>Add a couple more shows and suggestions will appear here.</p><button class="pill" data-action="search">Add a show</button></div>`;
+
+  main.innerHTML = head + body;
+}
+
+/* ---------- preview sheet (a suggestion before adding it) ---------- */
+
+function openPreview(aid) {
+  previewId = aid;
+  renderPreview();
+  openSheet(previewDlg);
+}
+
+function renderPreview() {
+  const show = recShows.get(previewId);
+  if (!show) return;
+  const have = store.findByAnilist(previewId);
+  const score = show.community ? Math.round(show.community / 10) : 0;
+  previewDlg.style.setProperty('--tint', tintOf(show));
+  previewDlg.innerHTML = `<div class="sheet detail" style="--tint:${tintOf(show)}">
+    <div class="grab" aria-hidden="true"></div>
+    <button class="icon-btn close" data-close aria-label="Close">×</button>
+    <div class="d-top">
+      <img class="sticker big" src="${esc(show.cover_url)}" alt="">
+      <div class="d-head">
+        <h2>${esc(show.title)}</h2>
+        ${show.title_native ? `<p class="native">${esc(show.title_native)}</p>` : ''}
+        <div class="meta">${badges(show)}${score ? `<span class="score">${HEART} ${score}</span>` : ''}</div>
+        <a class="al-link" href="https://anilist.co/anime/${show.anilist_id}" target="_blank" rel="noopener">View on AniList ↗</a>
+      </div>
+    </div>
+    ${show.description ? `<p class="d-desc">${esc(cut(show.description, 330))}</p>` : ''}
+    <div class="preview-actions">${have
+      ? `<button class="pill ghost" data-open="${have.id}">On ${esc(STATUS_LABEL[have.status])} ✓</button>`
+      : `<button class="pill" data-addrec="watching">▶ Watching</button>
+         <button class="pill soft" data-addrec="planning">+ Plan to watch</button>`}
+    </div>
+  </div>`;
+}
+
+async function addRecommended(status) {
+  const show = recShows.get(previewId);
+  if (!show || store.findByAnilist(show.anilist_id)) return;
+  const pending = store.add(show, status);
+  buzz();
+  burst(innerWidth / 2, innerHeight * 0.4, { count: 10, dist: 60, size: 16 });
+  toast(`Added to ${STATUS_LABEL[status]} ✿`);
+  closeSheet(previewDlg);
+  render();
+  if (!(await safe(pending))) render();
+}
+
 // The pink "active" pill glides from the previous chip to the new one.
 const indPos = {};
 function placeInd(sel, key) {
@@ -239,6 +411,7 @@ function render(animate = false) {
   const scrollLeft = chips ? chips.scrollLeft : 0;
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
+  else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
@@ -561,11 +734,16 @@ async function addFromSearch(i, status, rect) {
 
 function openDetail(id) {
   openId = id;
+  editingTotal = false;
   renderDetail();
   if (searchDlg.open) {
     // Swap sheets in place so a single back press still closes the detail sheet.
     animateClose(searchDlg);
     if (history.state?.sheet === 'searchDlg') history.replaceState({ sheet: 'detailDlg' }, '');
+    detailDlg.showModal();
+  } else if (previewDlg.open) {
+    animateClose(previewDlg);
+    if (history.state?.sheet === 'previewDlg') history.replaceState({ sheet: 'detailDlg' }, '');
     detailDlg.showModal();
   } else {
     openSheet(detailDlg);
@@ -583,6 +761,7 @@ function renderDetail() {
     .join('');
   const notes = $('#dNotes');
   const draft = notes && notes.value !== e.notes ? notes.value : null; // keep unsaved typing
+  detailDlg.style.setProperty('--tint', tintOf(e));
   detailDlg.innerHTML = `<div class="sheet detail" style="--tint:${tintOf(e)}">
     <div class="grab" aria-hidden="true"></div>
     <button class="icon-btn close" data-close aria-label="Close">×</button>
@@ -606,6 +785,13 @@ function renderDetail() {
         <span class="of">/ ${total ?? '?'} eps</span>
         <button data-step="1" aria-label="One episode more">+</button>
       </div>
+      ${editingTotal
+        ? `<div class="stepper total-row">
+             <input id="dTotal" type="number" inputmode="numeric" min="1" value="${total ?? ''}" aria-label="Total episodes" placeholder="total">
+             <button class="pill" data-save-total>Save</button>
+             <button class="link" data-cancel-total>Cancel</button>
+           </div>`
+        : `<button class="total-btn" data-edit-total>${total ? `${total} episodes in total` : 'Total episodes unknown'} · change</button>`}
     </section>
     <section class="d-sec"><h3>Rating <span class="dim">${e.score ? e.score + ' / 10' : 'not rated yet'}</span></h3>
       <div class="hearts" role="radiogroup" aria-label="Rating">${hearts}</div>
@@ -758,11 +944,35 @@ document.addEventListener('click', (ev) => {
 
   if (d.view) {
     if (d.view === ui.view) return;
-    if (d.view === 'airing') history.pushState({ view: 'airing' }, '');
-    else if (history.state?.view === 'airing') return history.back(); // popstate switches the view
+    if (d.view === 'list') {
+      if (history.state?.view) return history.back(); // popstate switches back
+    } else {
+      history.pushState({ view: d.view }, '');
+    }
     ui.view = d.view; saveUi(); render(true); scrollTo(0, 0);
   } else if (d.action === 'search') {
     openSearch();
+  } else if ('recRefresh' in d) {
+    toast('Looking for fresh picks ✿');
+    loadRecs({ force: true });
+  } else if (d.preview) {
+    openPreview(Number(d.preview));
+  } else if (d.addrec) {
+    addRecommended(d.addrec);
+  } else if ('editTotal' in d) {
+    editingTotal = true;
+    renderDetail();
+    $('#dTotal')?.focus();
+    $('#dTotal')?.select?.();
+  } else if ('saveTotal' in d) {
+    const raw = $('#dTotal').value.trim();
+    const n = raw === '' ? null : Math.max(1, parseInt(raw, 10) || 0) || null;
+    editingTotal = false;
+    change(openId, { total_eps: n });
+    toast(n ? `Total set to ${n} episodes ✿` : "Using AniList's episode count");
+  } else if ('cancelTotal' in d) {
+    editingTotal = false;
+    renderDetail();
   } else if (d.statusTab) {
     if (d.statusTab === ui.status) return;
     ui.status = d.statusTab; saveUi(); render(true); revealActiveChip();
@@ -847,21 +1057,29 @@ document.addEventListener('input', (ev) => {
   }
 });
 
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && ev.target.id === 'dTotal') {
+    ev.preventDefault();
+    $('[data-save-total]')?.click();
+  }
+});
+
 // Animations end by removing their trigger class, so they can play again next time.
 document.addEventListener('animationend', (ev) => {
   ev.target.classList?.remove('squish', 'flip', 'pop', 'ripple', 'spin');
 });
 
-for (const dlg of [searchDlg, detailDlg, settingsDlg]) {
+for (const dlg of [searchDlg, detailDlg, settingsDlg, previewDlg]) {
   dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); closeSheet(dlg); }); // Esc key
   enableSwipe(dlg);
 }
-detailDlg.addEventListener('close', () => { flushNotes(); openId = null; });
+detailDlg.addEventListener('close', () => { flushNotes(); openId = null; editingTotal = false; });
+previewDlg.addEventListener('close', () => { previewId = null; });
 
 addEventListener('popstate', () => {
   const open = document.querySelector('dialog[open]:not(.closing)');
   if (open) return animateClose(open);
-  if (ui.view === 'airing' && history.state?.view !== 'airing') {
+  if (ui.view !== 'list' && history.state?.view !== ui.view) {
     ui.view = 'list'; saveUi(); render(true); scrollTo(0, 0);
   }
 });
@@ -954,8 +1172,9 @@ function showApp(mode) {
   store.subscribe(() => {
     render();
     if (store.all().some((e) => !(e.anilist_id in airing) && !['completed', 'dropped'].includes(e.status))) loadAiring();
+    if (ui.view === 'foryou') loadRecs();
   });
-  if (ui.view === 'airing') history.pushState({ view: 'airing' }, '');
+  if (ui.view !== 'list') history.pushState({ view: ui.view }, '');
   render(true);
   hideSplash();
   loadAiring();
