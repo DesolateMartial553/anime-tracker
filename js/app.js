@@ -231,7 +231,15 @@ function renderAiring() {
 
   let i = 0;
   const body = !airingLoaded && !rows.length
-    ? '<p class="dim center">Checking the schedule…</p>'
+    ? `<div class="skel-air" aria-busy="true" aria-label="Loading the schedule">${Array.from({ length: 3 }, (_, i) => `
+        <div class="skel-row" style="--i:${i}">
+          <div class="skel line t" style="width:44px"></div>
+          <div class="skel cover"></div>
+          <div class="skel-info">
+            <div class="skel line b" style="width:${66 - i * 7}%"></div>
+            <div class="skel line" style="width:${36 + i * 9}%"></div>
+          </div>
+        </div>`).join('')}</div>`
     : !groups.length
       ? `<div class="empty">${mochi('alive')}<p>No airing shows on your lists right now. Currently-airing shows you add will appear here with a countdown.</p></div>`
       : groups.map((g) => `<section class="day"><h3>${g.label}</h3><ul>
@@ -327,7 +335,16 @@ function renderForYou() {
 
   let body;
   if (sections.length) body = sections.map(recSection).join('');
-  else if (recs.loading) body = '<div class="loading" aria-label="Finding shows you might like"><span></span><span></span><span></span></div>';
+  else if (recs.loading) body = `<div class="skel-for" aria-busy="true" aria-label="Finding shows you might like">${Array.from({ length: 2 }, (_, s) => `
+    <section class="rec skel-sec">
+      <h3><span class="skel line skel-h" style="width:${s ? '138px' : '196px'}"></span></h3>
+      <ul class="rec-row">${Array.from({ length: s ? 4 : 6 }, (_, i) => `
+        <li style="--i:${i}"><div class="skel-tile">
+          <div class="skel cover tile"></div>
+          <div class="skel line" style="width:${88 - i * 6}%"></div>
+          <div class="skel line" style="width:${48 + (i % 3) * 8}%"></div>
+        </div></li>`).join('')}</ul>
+    </section>`).join('')}</div>`;
   else if (recs.error) body = `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
   else body = `<div class="empty">${mochi('alive')}<p>Add a couple more shows and suggestions will appear here.</p><button class="pill" data-action="search">Add a show</button></div>`;
 
@@ -669,7 +686,15 @@ function renderResults(state) {
     box.innerHTML = `<div class="hint"><p>Search by English, romaji or native title.</p>
       <div class="chips wrap">${SUGGESTIONS.map((s) => `<button class="chip" data-suggest="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   } else if (state === 'loading') {
-    box.innerHTML = '<div class="loading" aria-label="Searching"><span></span><span></span><span></span></div>';
+    box.innerHTML = `<ul class="skel-results" aria-busy="true" aria-label="Searching">${Array.from({ length: 4 }, (_, i) => `
+      <li class="skel-row" style="--i:${i}">
+        <div class="skel cover"></div>
+        <div class="skel-info">
+          <div class="skel line b" style="width:${58 - i * 4}%"></div>
+          <div class="skel line" style="width:${34 + (i % 2) * 9}%"></div>
+          <div class="skel line" style="width:${44 + (i % 3) * 6}%"></div>
+        </div>
+      </li>`).join('')}</ul>`;
   } else if (state === 'error') {
     box.innerHTML = '<p class="dim center">AniList is being shy right now. Try again in a moment.</p>';
   } else if (!lastResults.length) {

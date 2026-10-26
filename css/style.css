@@ -25,6 +25,13 @@
   --glass-shine: rgba(255, 255, 255, 0.85);
   --glass-shadow: rgba(120, 70, 110, 0.16);
   --wash: 30%;
+  /* soft outer bloom around glass — the dewy light from the dashboard look */
+  --halo: rgba(255, 255, 255, 0.6);
+  /* skeleton loader fills */
+  --skel-fill: rgba(75, 58, 82, 0.09);
+  --skel-shine: rgba(255, 255, 255, 0.85);
+  /* default glow colour; cards and rows override it per show */
+  --tint: var(--pink);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -51,6 +58,9 @@
     --glass-shine: rgba(255, 255, 255, 0.16);
     --glass-shadow: rgba(0, 0, 0, 0.45);
     --wash: 44%;
+    --halo: rgba(255, 255, 255, 0.13);
+    --skel-fill: rgba(255, 255, 255, 0.08);
+    --skel-shine: rgba(255, 255, 255, 0.14);
   }
 }
 :root[data-theme="dark"] {
@@ -76,6 +86,9 @@
   --glass-shine: rgba(255, 255, 255, 0.16);
   --glass-shadow: rgba(0, 0, 0, 0.45);
   --wash: 44%;
+  --halo: rgba(255, 255, 255, 0.13);
+  --skel-fill: rgba(255, 255, 255, 0.08);
+  --skel-shine: rgba(255, 255, 255, 0.14);
 }
 
 /* ---------- base ---------- */
@@ -92,6 +105,22 @@ body {
   color: var(--ink);
   font: 16px/1.5 'Nunito', system-ui, sans-serif;
 }
+/* soft colour pools drifting behind everything — the dewy glow in the mockup */
+body::before, body::after {
+  content: ''; position: fixed; z-index: -1; border-radius: 50%;
+  filter: blur(60px); pointer-events: none;
+}
+body::before {
+  width: 52vmax; height: 52vmax; top: -20vmax; right: -16vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lav) 32%, transparent), transparent 68%);
+  animation: drift 22s ease-in-out infinite alternate;
+}
+body::after {
+  width: 40vmax; height: 40vmax; bottom: -16vmax; left: -14vmax;
+  background: radial-gradient(circle, color-mix(in srgb, var(--pink) 28%, transparent), transparent 68%);
+  animation: drift 26s ease-in-out -11s infinite alternate-reverse;
+}
+@keyframes drift { to { transform: translate(-5vmax, 6vmax) scale(1.12); } }
 /* night sky: scattered stars instead of polka dots */
 :root[data-theme="dark"] body {
   background-image:
@@ -261,7 +290,7 @@ select {
     radial-gradient(120% 150% at 105% 110%, color-mix(in srgb, var(--tint) 22%, transparent) 0%, transparent 62%),
     var(--glass);
   border: 1px solid var(--glass-line);
-  box-shadow: 0 10px 26px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+  box-shadow: 0 10px 26px var(--glass-shadow), 0 0 28px -8px var(--halo), inset 0 1px 0 var(--glass-shine);
   backdrop-filter: blur(16px) saturate(1.4);
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
@@ -269,7 +298,7 @@ select {
   display: block; width: 72px; aspect-ratio: 2 / 3; object-fit: cover;
   border: 1px solid color-mix(in srgb, #fff 45%, transparent); border-radius: 12px;
   background: color-mix(in srgb, var(--tint) 40%, var(--paper));
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--tint) 38%, rgba(40, 20, 50, 0.3));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--tint) 38%, rgba(40, 20, 50, 0.3)), 0 0 16px -4px var(--halo);
 }
 .card:nth-child(odd) .sticker { transform: rotate(-3deg); }
 .card:nth-child(even) .sticker { transform: rotate(2.5deg); }
@@ -318,7 +347,7 @@ select {
     radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--tint) var(--wash), transparent) 0%, transparent 62%),
     var(--glass);
   border: 1px solid var(--glass-line);
-  box-shadow: 0 8px 20px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+  box-shadow: 0 8px 20px var(--glass-shadow), 0 0 24px -8px var(--halo), inset 0 1px 0 var(--glass-shine);
   backdrop-filter: blur(14px) saturate(1.35);
   -webkit-backdrop-filter: blur(14px) saturate(1.35);
 }
@@ -378,7 +407,7 @@ select {
     radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--tint) var(--wash), transparent) 0%, transparent 62%),
     var(--glass);
   border: 1px solid var(--glass-line);
-  box-shadow: 0 8px 20px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+  box-shadow: 0 8px 20px var(--glass-shadow), 0 0 24px -8px var(--halo), inset 0 1px 0 var(--glass-shine);
   backdrop-filter: blur(14px) saturate(1.35);
   -webkit-backdrop-filter: blur(14px) saturate(1.35);
 }
@@ -595,18 +624,50 @@ dialog .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
 .has-ind .chip.on, .has-ind button.on { background: transparent; border-color: transparent; box-shadow: none; }
 
 /* cards pop in one after another when switching tabs */
-main.animate .card, main.animate .day li, main.animate .empty, main.animate .air-head {
+main.animate .card, main.animate .day li, main.animate .empty, main.animate .air-head,
+main.animate .skel-row {
   animation: popIn 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
   animation-delay: calc(var(--i, 0) * 45ms);
 }
 .results.fresh .result { animation: popIn 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) backwards; animation-delay: calc(var(--i, 0) * 35ms); }
 @keyframes popIn { from { opacity: 0; transform: translateY(18px) scale(0.94); } }
 
-.loading { display: flex; justify-content: center; gap: 8px; padding: 44px 0; }
-.loading span { width: 11px; height: 11px; border-radius: 50%; background: var(--pink); animation: hop 0.9s ease-in-out infinite; }
-.loading span:nth-child(2) { background: var(--lav); animation-delay: 0.15s; }
-.loading span:nth-child(3) { background: var(--mint); animation-delay: 0.3s; }
-@keyframes hop { 0%, 100% { transform: translateY(0); opacity: 0.5; } 40% { transform: translateY(-12px); opacity: 1; } }
+/* skeleton loaders: frosted placeholders that shimmer while AniList answers */
+.skel {
+  position: relative; overflow: hidden; border-radius: 99px;
+  background: var(--skel-fill);
+}
+.skel::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-110%);
+  background: linear-gradient(100deg, transparent 30%, var(--skel-shine) 50%, transparent 70%);
+  animation: sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+@keyframes sweep { to { transform: translateX(110%); } }
+.skel.line { height: 12px; }
+.skel.line.b { height: 14px; }
+.skel.line.t { height: 10px; }
+.skel.cover { width: 48px; aspect-ratio: 2 / 3; border-radius: 11px; }
+.skel.cover.tile { width: 100%; border-radius: 12px; }
+.skel-results, .skel-air { display: grid; gap: 10px; padding: 4px 0 10px; }
+.skel-for .skel-sec { margin-bottom: 26px; }
+.skel-for .skel-h { display: inline-block; height: 13px; vertical-align: middle; }
+.skel-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 40%, transparent);
+  border: 1px solid var(--glass-line);
+}
+.skel-info { flex: 1; min-width: 0; display: grid; gap: 9px; }
+.skel-tile {
+  display: grid; gap: 9px; padding: 8px; border-radius: 16px;
+  background: color-mix(in srgb, var(--paper) 40%, transparent);
+  border: 1px solid var(--glass-line);
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { display: none; }
+  body::before, body::after { animation: none; }
+}
 
 /* +1 */
 .plus1.squish { animation: squish 0.45s cubic-bezier(0.3, 1.6, 0.5, 1); }
@@ -727,7 +788,7 @@ main.animate .card, main.animate .day li, main.animate .empty, main.animate .air
     radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tint) var(--wash), transparent) 0%, transparent 70%),
     var(--glass);
   border: 1px solid var(--glass-line);
-  box-shadow: 0 8px 20px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+  box-shadow: 0 8px 20px var(--glass-shadow), 0 0 24px -8px var(--halo), inset 0 1px 0 var(--glass-shine);
   backdrop-filter: blur(14px) saturate(1.35);
   -webkit-backdrop-filter: blur(14px) saturate(1.35);
   transition: transform 0.18s;
