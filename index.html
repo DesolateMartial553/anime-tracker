@@ -45,7 +45,11 @@
       <nav class="nav" aria-label="Main">
         <button class="nav-btn" data-view="list" aria-current="page">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v15l-8-4-8 4V5a1 1 0 0 1 1-1z"/></svg>
-          <span>My shelf</span>
+          <span>Shelf</span>
+        </button>
+        <button class="nav-btn" data-view="foryou">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.2 12.7 8l4.8 1.7-4.8 1.7L11 16.2 9.3 11.4 4.5 9.7 9.3 8z"/><path d="M18 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
+          <span>For you</span>
         </button>
         <button class="nav-btn nav-add" data-action="search">
           <span class="plus" aria-hidden="true">+</span>
@@ -114,6 +118,7 @@
   </dialog>
 
   <dialog id="detailDlg" class="sheet-dlg" aria-label="Show details"></dialog>
+  <dialog id="previewDlg" class="sheet-dlg" aria-label="Suggested show"></dialog>
   <dialog id="settingsDlg" class="sheet-dlg" aria-label="Backup and app info">
     <div class="sheet detail">
       <div class="grab" aria-hidden="true"></div>
