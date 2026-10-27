@@ -1,6 +1,6 @@
 {
-  "versionCode": 9,
-  "versionName": "1.8",
+  "versionCode": 10,
+  "versionName": "1.9",
   "apk": "https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk",
-  "notes": "v1.8: Extended Explore page with multiple genre rows + Donghua picks, responsive swipe gestures, instant cached load."
+  "notes": "v1.9: Swipe fixed (document-level touch listeners + smoother animation + buzz feedback)."
 }
