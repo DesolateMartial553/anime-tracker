@@ -426,21 +426,15 @@ function placeInd(sel, key) {
 let exploreCache = null;
 async function loadExplore({ force = false } = {}) {
   if (!force && exploreCache && Date.now() - exploreCache.t < 3 * 60 * 60 * 1000) return exploreCache;
-  try {
-    const mod = await import('./explore-data.js');
-    exploreCache = { ...mod.exploreData, t: Date.now() };
-  } catch (e) {
-    console.warn('explore load failed', e);
-    // Fallback hardcoded data for instant display
-    exploreCache = {
-      seasonName: "Fall 2026", nextSeasonName: "Winter 2027",
-      trending: [{anilist_id: 1, title: "Frieren", cover_url: "https://picsum.photos/seed/1/300/400", year: 2023, total_eps: 28}],
-      thisSeason: [{anilist_id: 2, title: "DAN DA DAN", cover_url: "https://picsum.photos/seed/2/300/400", year: 2024, total_eps: 12}],
-      nextSeason: [{anilist_id: 3, title: "One Piece", cover_url: "https://picsum.photos/seed/3/300/400", year: 1999, total_eps: 1100}],
-      popular: [{anilist_id: 4, title: "Attack on Titan", cover_url: "https://picsum.photos/seed/4/300/400", year: 2013, total_eps: 25}],
-      topRated: [{anilist_id: 5, title: "Cowboy Bebop", cover_url: "https://picsum.photos/seed/5/300/400", year: 1998, total_eps: 26}],
-      t: Date.now()
-    };
+  if (window.STATIC_EXPLORE) {
+    exploreCache = { ...window.STATIC_EXPLORE, t: Date.now() };
+  } else {
+    try {
+      const mod = await import('./explore-data.js');
+      exploreCache = { ...mod.exploreData, t: Date.now() };
+    } catch (e) {
+      console.warn('explore load failed', e);
+    }
   }
   if (ui.view === 'explore') renderExplore();
   return exploreCache;
