@@ -72,7 +72,7 @@ export async function searchAnime(q, signal) {
       airing_status: m.status,
       description: plain(m.description),
       community: m.averageScore,
-      genres: genreTags.map((g) => g.name).slice(0, 4),
+      genres: (Array.isArray(m.genres) ? m.genres : []).slice(0, 4),
     };
   });
 }
