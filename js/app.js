@@ -439,7 +439,7 @@ function render(animate = false) {
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
-  else if (ui.view === 'explore') { ui.view = 'foryou'; renderForYou(); }
+  else if (ui.view === 'explore') { ui.view = 'list'; saveUi(); render(true); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
