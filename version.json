@@ -1,1 +1,6 @@
-{"versionCode":19,"versionName":"2.7","apk":"https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk","notes":"v2.7: Explore page fully fixed (correct data format + empty-state guard)."}
+{
+  "versionCode": 20,
+  "versionName": "2.8",
+  "apk": "https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk",
+  "notes": "v2.8: Explore section removed entirely per user request."
+}
