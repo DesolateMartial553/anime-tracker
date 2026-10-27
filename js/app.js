@@ -424,9 +424,12 @@ function placeInd(sel, key) {
 }
 
 let exploreCache = null;
-async function loadExplore() {
-  if (exploreCache && Date.now() - exploreCache.t < 7 * 24 * 60 * 60 * 1000) return exploreCache;
-  try { exploreCache = await getWeeklyTop(); exploreCache.t = Date.now(); } catch (e) { console.warn('explore load failed', e); }
+async function loadExplore({ force = false } = {}) {
+  if (!force && exploreCache && Date.now() - exploreCache.t < 7 * 24 * 60 * 60 * 1000) return exploreCache;
+  try {
+    const fresh = await getWeeklyTop();
+    if (fresh?.top?.length) { exploreCache = fresh; exploreCache.t = Date.now(); if (ui.view === 'explore') renderExplore(); }
+  } catch (e) { console.warn('explore load failed', e); }
 }
 
 function tile(s) {
@@ -436,14 +439,17 @@ function tile(s) {
 function renderExplore() {
   loadExplore();
   const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Top of the week · changes every Sunday.</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
-  if (!exploreCache) { main.innerHTML = head + `<div class="skel-for" aria-busy="true" aria-label="Loading explore"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:220px"></span></h3><ul class="rec-row">${Array.from({length:6}, (_, i) => `<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section></div>`; return; }
+  if (!exploreCache || !exploreCache.top?.length) {
+    main.innerHTML = head + `<div class="skel-for" aria-busy="true"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:220px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:140px"></span></h3><ul class="rec-row">${Array.from({length:3},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:80%"></div></div></li>`).join('')}</ul></section></div>`; return; }
   const top = exploreCache.top || [];
   const genres = exploreCache.genres || {};
-  let body = `<section class="rec"><h3>Top 10 this week</h3><ul class="rec-row">${top.map((s) => tile(s)).join('')}</ul></section>`;
-  const genreNames = Object.keys(genres).filter((g) => genres[g].length).slice(0, 4);
+  let body = `<section class="rec"><h3>Top 10 this week</h3><ul class="rec-row">${top.slice(0,10).map(tile).join('')}</ul></section>`;
+  const genreNames = Object.keys(genres).filter((g) => genres[g].length).slice(0, 6);
   for (const g of genreNames) {
-    body += `<section class="rec"><h3>${esc(g)}</h3><ul class="rec-row">${genres[g].map((s) => tile(s)).join('')}</ul></section>`;
+    body += `<section class="rec"><h3>${esc(g)}</h3><ul class="rec-row">${genres[g].slice(0,6).map(tile).join('')}</ul></section>`;
   }
+  const donghua = top.filter((s) => s.country === 'CN').slice(0, 6);
+  if (donghua.length) body += `<section class="rec"><h3>Donghua picks</h3><ul class="rec-row">${donghua.map(tile).join('')}</ul></section>`;
   main.innerHTML = head + body;
 }
 
@@ -703,11 +709,11 @@ function onSwipe(el, dir) {
   const r = lastResults?.find((x) => x.anilist_id === Number(el.dataset.id));
   if (!r) return;
   const status = dir === 'right' ? 'planning' : (dir === 'left' ? 'completed' : null);
-  if (status) store.add({ ...r, status }, 'swipe');
+  if (status) { store.add({ ...r, status }, 'swipe'); buzz(30); }
 }
 
-document.querySelector('#results')?.addEventListener('touchstart', (e) => { const t = e.target.closest('.result'); if (t) swipeStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, target: t }; }, { passive: true });
-document.querySelector('#results')?.addEventListener('touchend', (e) => { if (!swipeStart?.target) return; const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*2) { onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left'); swipeStart.target.style.transform = 'translateX('+(dx>0?60:-60)+'px)'; setTimeout(()=>swipeStart.target.remove(), 200); } swipeStart = null; }, { passive: true });
+document.querySelector('#results')?.addEventListener('touchstart', (e) => { const t = e.target.closest('.result'); if (t) swipeStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, target: t, ts: Date.now() }; }, { passive: true });
+document.querySelector('#results')?.addEventListener('touchend', (e) => { if (!swipeStart?.target) return; const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*2 && Date.now() - swipeStart.ts < 500) { onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left'); const el = swipeStart.target; el.style.transition = 'transform .25s ease'; el.style.transform = 'translateX('+(dx>0?90:-90)+'px) rotate('+(dx>0?3:-3)+'deg)'; setTimeout(()=>{ el.style.display='none'; }, 250); } swipeStart = null; }, { passive: true });
 function openSearch() {
   openSheet(searchDlg);
   const q = $('#q');
@@ -1019,7 +1025,7 @@ document.addEventListener('click', (ev) => {
     loadRecs({ force: true });
   } else if (d.action === 'explore-refresh') {
     toast('Refreshing explore ✿');
-    exploreCache = null; loadExplore(); render();
+    loadExplore({ force: true });
   } else if (d.preview) {
     openPreview(Number(d.preview));
   } else if (d.addrec) {
