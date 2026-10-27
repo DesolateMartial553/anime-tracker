@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getWeeklyTop } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getAniListExplore } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -425,10 +425,10 @@ function placeInd(sel, key) {
 
 let exploreCache = null;
 async function loadExplore({ force = false } = {}) {
-  if (!force && exploreCache && Date.now() - exploreCache.t < 7 * 24 * 60 * 60 * 1000) return exploreCache;
+  if (!force && exploreCache && Date.now() - exploreCache.t < 3 * 60 * 60 * 1000) return exploreCache;
   try {
-    const fresh = await getWeeklyTop();
-    if (fresh?.top?.length) { exploreCache = fresh; exploreCache.t = Date.now(); if (ui.view === 'explore') renderExplore(); }
+    const fresh = await getAniListExplore(force);
+    if (fresh?.trending?.length) { exploreCache = fresh; exploreCache.t = Date.now(); if (ui.view === 'explore') renderExplore(); }
   } catch (e) { console.warn('explore load failed', e); }
 }
 

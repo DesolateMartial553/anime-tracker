@@ -210,61 +210,53 @@ export async function getDiscover(genres) {
   return data.Page.media.map(toShow);
 }
 
-/* ---------- Weekly Explore ---------- */
-// Keyed by YYYY-Www so the cache genuinely rotates each week even when AniList
-// returns the same top set. Two weeks of stale data are dropped automatically.
-function weekKey() {
-  const d = new Date();
-  const jan = new Date(d.getFullYear(), 0, 1);
-  const day = d.getDay() || 7;
-  const dow = Math.ceil(((jan - new Date(jan.getFullYear(), jan.getMonth(), jan.getDate())) / 86400000 + jan.getDay() + 7) / 7);
-  return `${d.getFullYear()}-W${String(dow).padStart(2, '0')}`;
+/* ---------- AniList Official Explore / Browse ---------- */
+function currentSeasonInfo() {
+  const d = new Date(), m = d.getMonth(), y = d.getFullYear();
+  if (m < 3) return { season: 'WINTER', year: y, nextSeason: 'SPRING', nextYear: y, seasonName: `Winter ${y}`, nextSeasonName: `Spring ${y}` };
+  if (m < 6) return { season: 'SPRING', year: y, nextSeason: 'SUMMER', nextYear: y, seasonName: `Spring ${y}`, nextSeasonName: `Summer ${y}` };
+  if (m < 9) return { season: 'SUMMER', year: y, nextSeason: 'FALL', nextYear: y, seasonName: `Summer ${y}`, nextSeasonName: `Fall ${y}` };
+  return { season: 'FALL', year: y, nextSeason: 'WINTER', nextYear: y + 1, seasonName: `Fall ${y}`, nextSeasonName: `Winter ${y + 1}` };
 }
 
-const WEEKLY = `query {
-  Page(perPage: 20) {
-    media(type: ANIME, isAdult: false, sort: [POPULARITY_DESC, SCORE_DESC]) {
-      id title { romaji english native } coverImage { large color }
-      episodes format status seasonYear countryOfOrigin description averageScore genres
-    }
-  }
+const ANILIST_EXPLORE = `query ($season: MediaSeason, $seasonYear: Int, $nextSeason: MediaSeason, $nextSeasonYear: Int) {
+  trending: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: TRENDING_DESC) { ${MEDIA} } }
+  thisSeason: Page(perPage: 10) { media(type: ANIME, isAdult: false, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
+  nextSeason: Page(perPage: 10) { media(type: ANIME, isAdult: false, season: $nextSeason, seasonYear: $nextSeasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
+  popular: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: POPULARITY_DESC) { ${MEDIA} } }
+  topRated: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ${MEDIA} } }
 }`;
 
-const WEEKLY_KEY = 'cc.explore.v1';
-const WEEKLY_TTL = 8 * 24 * 60 * 60 * 1000; // weekly refresh
+const EXPLORE_KEY = 'cc.anilist_explore.v1';
+const EXPLORE_TTL = 3 * 60 * 60 * 1000; // 3 hours
 
-export async function getWeeklyTop() {
-  const key = weekKey();
+export async function getAniListExplore(force = false) {
   const now = Date.now();
-  let cached = null;
-  try {
-    cached = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}');
-  } catch {}
-  const valid =
-    cached &&
-    cached.key === key &&
-    cached.top?.length &&
-    (now - cached.t < WEEKLY_TTL || cached.t === 0);
-  if (valid) return cached;
-  const data = await gql(WEEKLY);
-  const top = data.Page.media.map((m) => {
-    const g = Array.isArray(m.genres) ? m.genres : [];
-    return { ...toShow(m), genres: g.slice(0, 3) };
-  });
-  const result = { key, t: now, top, genres: groupByGenre(top) };
-  try { localStorage.setItem(WEEKLY_KEY, JSON.stringify(result)); } catch {}
-  return result;
-}
-
-function groupByGenre(top) {
-  const map = {};
-  for (const s of top) {
-    for (const g of s.genres || []) {
-      if (!map[g]) map[g] = [];
-      if (map[g].length < 5) map[g].push(s);
-    }
+  if (!force) {
+    try {
+      const c = JSON.parse(localStorage.getItem(EXPLORE_KEY) || '{}');
+      if (c.at && now - c.at < EXPLORE_TTL && c.trending?.length) return c;
+    } catch {}
   }
-  return map;
+  const info = currentSeasonInfo();
+  const data = await gql(ANILIST_EXPLORE, {
+    season: info.season,
+    seasonYear: info.year,
+    nextSeason: info.nextSeason,
+    nextSeasonYear: info.nextYear,
+  });
+  const res = {
+    at: now,
+    seasonName: info.seasonName,
+    nextSeasonName: info.nextSeasonName,
+    trending: (data.trending?.media || []).map(toShow),
+    thisSeason: (data.thisSeason?.media || []).map(toShow),
+    nextSeason: (data.nextSeason?.media || []).map(toShow),
+    popular: (data.popular?.media || []).map(toShow),
+    topRated: (data.topRated?.media || []).map(toShow),
+  };
+  try { localStorage.setItem(EXPLORE_KEY, JSON.stringify(res)); } catch {}
+  return res;
 }
 
 export function clearRecommendationCache() {
