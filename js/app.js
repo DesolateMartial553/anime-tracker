@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getWeeklyTop } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -423,12 +423,37 @@ function placeInd(sel, key) {
   indPos[key] = to;
 }
 
+let exploreCache = null;
+async function loadExplore() {
+  if (exploreCache && Date.now() - exploreCache.t < 7 * 24 * 60 * 60 * 1000) return exploreCache;
+  try { exploreCache = await getWeeklyTop(); exploreCache.t = Date.now(); } catch (e) { console.warn('explore load failed', e); }
+}
+
+function tile(s) {
+  return `<li style="--tint:${tintOf(s)};--i:0"><button class="rec-tile" data-preview="${s.anilist_id}" aria-label="More about ${esc(s.title)}"><span class="rec-cover"><img src="${esc(s.cover_url)}" alt="" loading="lazy"></span><span class="rec-name">${esc(s.title)}</span><span class="rec-meta">${isDonghua(s) ? 'Donghua' : 'Anime'}${s.year ? ` · ${s.year}` : ''}${s.total_eps ? ` · ${s.total_eps} ep` : ''}</span></button></li>`;
+}
+
+function renderExplore() {
+  loadExplore();
+  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Top of the week · changes every Sunday.</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
+  if (!exploreCache) { main.innerHTML = head + `<div class="skel-for" aria-busy="true" aria-label="Loading explore"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:220px"></span></h3><ul class="rec-row">${Array.from({length:6}, (_, i) => `<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section></div>`; return; }
+  const top = exploreCache.top || [];
+  const genres = exploreCache.genres || {};
+  let body = `<section class="rec"><h3>Top 10 this week</h3><ul class="rec-row">${top.map((s) => tile(s)).join('')}</ul></section>`;
+  const genreNames = Object.keys(genres).filter((g) => genres[g].length).slice(0, 4);
+  for (const g of genreNames) {
+    body += `<section class="rec"><h3>${esc(g)}</h3><ul class="rec-row">${genres[g].map((s) => tile(s)).join('')}</ul></section>`;
+  }
+  main.innerHTML = head + body;
+}
+
 function render(animate = false) {
   const chips = $('.chips.scroll');
   const scrollLeft = chips ? chips.scrollLeft : 0;
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
+  else if (ui.view === 'explore') renderExplore();
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
@@ -992,6 +1017,9 @@ document.addEventListener('click', (ev) => {
   } else if ('recRefresh' in d) {
     toast('Looking for fresh picks ✿');
     loadRecs({ force: true });
+  } else if (d.action === 'explore-refresh') {
+    toast('Refreshing explore ✿');
+    exploreCache = null; loadExplore(); render();
   } else if (d.preview) {
     openPreview(Number(d.preview));
   } else if (d.addrec) {
