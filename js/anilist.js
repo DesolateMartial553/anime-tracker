@@ -31,8 +31,7 @@ const AIRING = `query ($ids: [Int]) {
 }`;
 
 // Fields shared by recommendations and the "similar shows" fallback.
-const MEDIA = `id title { romaji english native } coverImage { large color }
-  episodes format seasonYear countryOfOrigin status description averageScore`;
+const MEDIA = `id title { english romaji } coverImage { large } episodes year status`;
 
 // AniList's own "if you liked this, you might like" graph, ranked by how many
 // people agreed with each recommendation.
@@ -256,11 +255,11 @@ export function clearRecommendationCache() {
 
 /* ---------- Restore AniLit Format (v2.0 browse) ---------- */
 const ANILIST_EXPLORE = `query ($season: MediaSeason, $seasonYear: Int, $nextSeason: MediaSeason, $nextSeasonYear: Int) {
-  trending: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: TRENDING_DESC) { ${MEDIA} } }
-  thisSeason: Page(perPage: 10) { media(type: ANIME, isAdult: false, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
-  nextSeason: Page(perPage: 10) { media(type: ANIME, isAdult: false, season: $nextSeason, seasonYear: $nextSeasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
-  popular: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: POPULARITY_DESC) { ${MEDIA} } }
-  topRated: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ${MEDIA} } }
+  trending: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: TRENDING_DESC) { ${MEDIA} } }
+  thisSeason: Page(perPage: 6) { media(type: ANIME, isAdult: false, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
+  nextSeason: Page(perPage: 6) { media(type: ANIME, isAdult: false, season: $nextSeason, seasonYear: $nextSeasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
+  popular: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: POPULARITY_DESC) { ${MEDIA} } }
+  topRated: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ${MEDIA} } }
 }`;
 
 export async function getAniListExplore(force = false) {
