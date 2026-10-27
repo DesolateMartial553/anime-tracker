@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getAniListExplore } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getCrunchyHome } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -453,13 +453,26 @@ function renderExplore() {
   main.innerHTML = head + body;
 }
 
+
+function renderCrunchy() {
+  const head = `<div class="air-head rec-head"><div><h2>Crunchyroll Top Picks</h2><p class="dim">Trending · Seasonal · By genre</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh picks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
+  const c = exploreCache;
+  if (!c || !c.topPicks?.length) { main.innerHTML = head + `<div class="skel-for" aria-busy="true"><div class="skel-tile"><div class="skel cover tile" style="aspect-ratio:3/4"></div><div class="skel line" style="width:70%"></div></div></div>`; return; }
+  const hero = c.topPicks[0];
+  const row = (arr) => arr?.map(t => `<li style="--tint:${tintOf(t)}"><button class="rec-tile" data-preview="${t.anilist_id}"><span class="rec-cover"><img src="${esc(t.cover_url)}" alt=""></span><b>${esc(t.title)}</b><span class="rec-meta">${t.year||''}</span></button></li>`).join('');
+  let body = `<section class="crunchy-hero"><button class="cover-btn" data-preview="${hero.anilist_id}" aria-label="${esc(hero.title)}"><img src="${esc(hero.cover_url)}" alt=""></button><div><h2>${esc(hero.title)}</h2><p>${esc(hero.description ? hero.description.slice(0,140) : '')}</p><button class="pill" data-addrec="watching">▶ Watching</button></div></section>`;
+  body += `<section><h3>Simulcasts</h3><ul class="rec-row">${row(c.simulcasts)}</ul></section>`;
+  body += `<section><h3>Action Hits</h3><ul class="rec-row">${row(c.actionHit)}</ul></section>`;
+  body += `<section><h3>Comedy Picks</h3><ul class="rec-row">${row(c.comedyHit)}</ul></section>`;
+  main.innerHTML = head + body;
+}
 function render(animate = false) {
   const chips = $('.chips.scroll');
   const scrollLeft = chips ? chips.scrollLeft : 0;
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
-  else if (ui.view === 'explore') renderExplore();
+  else if (ui.view === 'explore') renderCrunchy();
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
