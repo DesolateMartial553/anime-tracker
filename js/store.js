@@ -201,6 +201,19 @@ export async function verifyCode(email, token) {
   await startCloud(data.user);
 }
 
+export async function coupleInvite() {
+  if (!sb || !user) return;
+  const { data, error } = await sb.from('couples').insert({ a: user.id, b: null }).select().single();
+  if (error) throw error;
+  return data.code;
+}
+export async function coupleAccept(code) {
+  if (!sb || !user) return;
+  const { data } = await sb.from('couples').select('*').eq('code', code.toUpperCase()).single();
+  if (!data || data.b) throw new Error('bad or used code');
+  await sb.from('couples').update({ b: user.id }).eq('a', data.a);
+}
+
 export async function signOut() {
   if (sb) await sb.auth.signOut();
   location.reload();

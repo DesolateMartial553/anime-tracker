@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Couple — Cozy Corner</title></head><body>
+<h1>Share with your person ✿</h1>
+<p>Schema (supabase.sql): <code>couples(a,b,code)</code> — invite by 9-char code; partner reads your <code>entries</code> (partner-can-read RLS).</p>
+<form id="invite"><input id="code" placeholder="CODE" required minlength="9" maxlength="9"><button>Accept</button></form>
+<p>Status: <span id="pair">not paired</span></p>
+<p>Note: front-end needs <code>store.couple()</code> / <code>store.acceptCode()</code> — not yet added (needs your sign-in flow check).</p>
+</body></html>
