@@ -712,8 +712,25 @@ function onSwipe(el, dir) {
   if (status) { store.add({ ...r, status }, 'swipe'); buzz(30); }
 }
 
-document.querySelector('#results')?.addEventListener('touchstart', (e) => { const t = e.target.closest('.result'); if (t) swipeStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, target: t, ts: Date.now() }; }, { passive: true });
-document.querySelector('#results')?.addEventListener('touchend', (e) => { if (!swipeStart?.target) return; const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*2 && Date.now() - swipeStart.ts < 500) { onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left'); const el = swipeStart.target; el.style.transition = 'transform .25s ease'; el.style.transform = 'translateX('+(dx>0?90:-90)+'px) rotate('+(dx>0?3:-3)+'deg)'; setTimeout(()=>{ el.style.display='none'; }, 250); } swipeStart = null; }, { passive: true });
+document.addEventListener('touchstart', (e) => {
+  const t = e.target.closest('#results .result');
+  if (t) swipeStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, target: t, ts: Date.now() };
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+  if (!swipeStart?.target) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x;
+  const dy = e.changedTouches[0].clientY - swipeStart.y;
+  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 2 && Date.now() - swipeStart.ts < 600) {
+    onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left');
+    const el = swipeStart.target;
+    el.style.transition = 'transform .25s ease, opacity .25s ease';
+    el.style.transform = `translateX(${dx > 0 ? 120 : -120}px) rotate(${dx > 0 ? 5 : -5}deg)`;
+    el.style.opacity = '0';
+    setTimeout(() => { el.style.display = 'none'; }, 250);
+  }
+  swipeStart = null;
+}, { passive: true });
 function openSearch() {
   openSheet(searchDlg);
   const q = $('#q');
