@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getCrunchyHome } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getAniListExplore } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -439,17 +439,12 @@ function tile(s) {
 function renderExplore() {
   loadExplore();
   const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Top of the week · changes every Sunday.</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
-  if (!exploreCache || !exploreCache.top?.length) {
+  if (!exploreCache || !exploreCache.trending?.length) {
     main.innerHTML = head + `<div class="skel-for" aria-busy="true"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:220px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:140px"></span></h3><ul class="rec-row">${Array.from({length:3},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:80%"></div></div></li>`).join('')}</ul></section></div>`; return; }
-  const top = exploreCache.top || [];
+  const { trending, thisSeason, nextSeason, popular, topRated, seasonName, nextSeasonName } = exploreCache || {};
   const genres = exploreCache.genres || {};
-  let body = `<section class="rec"><h3>Top 10 this week</h3><ul class="rec-row">${top.slice(0,10).map(tile).join('')}</ul></section>`;
-  const genreNames = Object.keys(genres).filter((g) => genres[g].length).slice(0, 6);
-  for (const g of genreNames) {
-    body += `<section class="rec"><h3>${esc(g)}</h3><ul class="rec-row">${genres[g].slice(0,6).map(tile).join('')}</ul></section>`;
-  }
-  const donghua = top.filter((s) => s.country === 'CN').slice(0, 6);
-  if (donghua.length) body += `<section class="rec"><h3>Donghua picks</h3><ul class="rec-row">${donghua.map(tile).join('')}</ul></section>`;
+  let body = ''; if (trending?.length) body += `<section class="rec"><h3>🔥 Trending Now</h3><ul class="rec-row">${trending.map(tile).join('')}</ul></section>`; if (thisSeason?.length) body += `<section class="rec"><h3>✨ ${esc(seasonName || 'This Season')}</h3><ul class="rec-row">${thisSeason.map(tile).join('')}</ul></section>`; if (nextSeason?.length) body += `<section class="rec"><h3>🌱 Upcoming (${esc(nextSeasonName || 'Next Season')})</h3><ul class="rec-row">${nextSeason.map(tile).join('')}</ul></section>`; if (popular?.length) body += `<section class="rec"><h3>👑 All-Time Popular</h3><ul class="rec-row">${popular.map(tile).join('')}</ul></section>`; if (topRated?.length) body += `<section class="rec"><h3>⭐ Highest Rated</h3><ul class="rec-row">${topRated.map(tile).join('')}</ul></section>`;
+  
   main.innerHTML = head + body;
 }
 
