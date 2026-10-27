@@ -709,7 +709,13 @@ function onSwipe(el, dir) {
   const r = lastResults?.find((x) => x.anilist_id === Number(el.dataset.id));
   if (!r) return;
   const status = dir === 'right' ? 'planning' : (dir === 'left' ? 'completed' : null);
-  if (status) { store.add({ ...r, status }, 'swipe'); buzz(30); }
+  if (status) {
+    store.add(r, status);
+    buzz(24);
+    toast(`Added ${r.title} to ${STATUS_LABEL[status]} ✿`);
+    const rect = el.getBoundingClientRect();
+    burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 8, dist: 50, size: 14 });
+  }
 }
 
 document.addEventListener('touchstart', (e) => {
@@ -721,13 +727,13 @@ document.addEventListener('touchend', (e) => {
   if (!swipeStart?.target) return;
   const dx = e.changedTouches[0].clientX - swipeStart.x;
   const dy = e.changedTouches[0].clientY - swipeStart.y;
-  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 2 && Date.now() - swipeStart.ts < 600) {
+  if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - swipeStart.ts < 600) {
     onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left');
     const el = swipeStart.target;
-    el.style.transition = 'transform .25s ease, opacity .25s ease';
-    el.style.transform = `translateX(${dx > 0 ? 120 : -120}px) rotate(${dx > 0 ? 5 : -5}deg)`;
+    el.style.transition = 'transform .35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity .3s ease-out';
+    el.style.transform = `translateX(${dx > 0 ? 160 : -160}px) rotate(${dx > 0 ? 12 : -12}deg) scale(0.85)`;
     el.style.opacity = '0';
-    setTimeout(() => { el.style.display = 'none'; }, 250);
+    setTimeout(() => { el.style.display = 'none'; }, 300);
   }
   swipeStart = null;
 }, { passive: true });
