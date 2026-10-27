@@ -1,6 +1,6 @@
 {
-  "versionCode": 5,
-  "versionName": "1.4",
+  "versionCode": 6,
+  "versionName": "1.5",
   "apk": "https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk",
-  "notes": "Glassy little loading shapes while things load, and a softer glow around your covers."
+  "notes": "Couple share UI + offline sync verified. v1.5 APK."
 }
