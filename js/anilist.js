@@ -210,6 +210,63 @@ export async function getDiscover(genres) {
   return data.Page.media.map(toShow);
 }
 
+/* ---------- Weekly Explore ---------- */
+// Keyed by YYYY-Www so the cache genuinely rotates each week even when AniList
+// returns the same top set. Two weeks of stale data are dropped automatically.
+function weekKey() {
+  const d = new Date();
+  const jan = new Date(d.getFullYear(), 0, 1);
+  const day = d.getDay() || 7;
+  const dow = Math.ceil(((jan - new Date(jan.getFullYear(), jan.getMonth(), jan.getDate())) / 86400000 + jan.getDay() + 7) / 7);
+  return `${d.getFullYear()}-W${String(dow).padStart(2, '0')}`;
+}
+
+const WEEKLY = `query {
+  Page(perPage: 20) {
+    media(type: ANIME, isAdult: false, sort: [POPULARITY_DESC, SCORE_DESC]) {
+      id title { romaji english native } coverImage { large color }
+      episodes format status seasonYear countryOfOrigin description averageScore genres
+    }
+  }
+}`;
+
+const WEEKLY_KEY = 'cc.explore.v1';
+const WEEKLY_TTL = 8 * 24 * 60 * 60 * 1000; // weekly refresh
+
+export async function getWeeklyTop() {
+  const key = weekKey();
+  const now = Date.now();
+  let cached = null;
+  try {
+    cached = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}');
+  } catch {}
+  const valid =
+    cached &&
+    cached.key === key &&
+    cached.top?.length &&
+    (now - cached.t < WEEKLY_TTL || cached.t === 0);
+  if (valid) return cached;
+  const data = await gql(WEEKLY);
+  const top = data.Page.media.map((m) => {
+    const g = Array.isArray(m.genres) ? m.genres : [];
+    return { ...toShow(m), genres: g.slice(0, 3) };
+  });
+  const result = { key, t: now, top, genres: groupByGenre(top) };
+  try { localStorage.setItem(WEEKLY_KEY, JSON.stringify(result)); } catch {}
+  return result;
+}
+
+function groupByGenre(top) {
+  const map = {};
+  for (const s of top) {
+    for (const g of s.genres || []) {
+      if (!map[g]) map[g] = [];
+      if (map[g].length < 5) map[g].push(s);
+    }
+  }
+  return map;
+}
+
 export function clearRecommendationCache() {
   try { localStorage.removeItem(REC_KEY); } catch {}
 }
