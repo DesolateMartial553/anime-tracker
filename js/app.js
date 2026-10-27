@@ -445,22 +445,34 @@ function tile(s) {
 }
 
 async function renderExplore() {
-  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Top of the week · changes every Sunday.</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
-  if (!exploreCache || !exploreCache.trending?.length) {
-    main.innerHTML = head + `<div class="skel-for" aria-busy="true"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:200px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:160px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section></div>`;
-  }
+  const activeVibe = window.currentExploreVibe || 'All';
+  const vibes = ['All', 'Fantasy', 'Action', 'Drama', 'Wholesome', 'Adventure', 'Sci-Fi', 'Mystery', 'Comedy', 'Sports'];
+  const vibeHtml = `<div class="chips scroll" style="margin: 12px 0 16px; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;">` + 
+    vibes.map(v => `<button class="chip ${activeVibe === v ? 'active' : ''}" data-vibe="${v}" style="white-space: nowrap; padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15); background: ${activeVibe === v ? '#ff7597' : 'rgba(255,255,255,0.05)'}; color: ${activeVibe === v ? '#fff' : 'inherit'}; cursor: pointer; font-size: 13px;">${v === 'All' ? '✨ All Vibes' : v}</button>`).join('') + 
+    `</div>`;
+
+  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Curated picks · Handcrafted for Cozy Corner</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>` + vibeHtml;
   await loadExplore();
   if (!exploreCache || !exploreCache.trending?.length) return;
-  const { trending, thisSeason, nextSeason, popular, topRated, seasonName, nextSeasonName } = exploreCache;
+  const { hero, trending, thisSeason, nextSeason, popular, topRated, seasonName, nextSeasonName } = exploreCache;
+  const filterList = (arr) => activeVibe === 'All' ? arr : (arr || []).filter(item => item.vibe === activeVibe);
+  
   let body = '';
-  if (trending?.length) body += `<section class="rec"><h3>🔥 Trending Now</h3><ul class="rec-row">${trending.map(tile).join('')}</ul></section>`;
-  if (thisSeason?.length) body += `<section class="rec"><h3>✨ ${esc(seasonName || 'This Season')}</h3><ul class="rec-row">${thisSeason.map(tile).join('')}</ul></section>`;
-  if (nextSeason?.length) body += `<section class="rec"><h3>🌱 Upcoming (${esc(nextSeasonName || 'Next Season')})</h3><ul class="rec-row">${nextSeason.map(tile).join('')}</ul></section>`;
-  if (popular?.length) body += `<section class="rec"><h3>👑 All-Time Popular</h3><ul class="rec-row">${popular.map(tile).join('')}</ul></section>`;
-  if (topRated?.length) body += `<section class="rec"><h3>⭐ Highest Rated</h3><ul class="rec-row">${topRated.map(tile).join('')}</ul></section>`;
+  if (hero) {
+    body += `<section class="explore-hero" style="margin: 16px 0 24px; padding: 32px; border-radius: 20px; background: linear-gradient(135deg, rgba(100,60,140,0.4), rgba(40,25,60,0.8)), url('${hero.backdrop_url}') center/cover; box-shadow: 0 12px 30px rgba(0,0,0,0.4); display: flex; flex-direction: column; gap: 12px;">
+      <span style="background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 20px; font-size: 12px; width: fit-content; backdrop-filter: blur(4px);">${esc(hero.vibe)}</span>
+      <h2 style="font-size: 28px; font-weight: 700; margin: 0; color: #fff;">${esc(hero.title)}</h2>
+      <p style="max-width: 600px; font-size: 14px; opacity: 0.85; line-height: 1.5; margin: 0;">${esc(hero.tagline)}</p>
+      <button class="pill" data-preview="${hero.anilist_id}" style="width: fit-content; margin-top: 8px; background: #ff7597; color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: 600; cursor: pointer;">✨ Spotlight Preview</button>
+    </section>`;
+  }
+  if (filterList(trending)?.length) body += `<section class="rec"><h3>🔥 Trending Now</h3><ul class="rec-row">${filterList(trending).map(tile).join('')}</ul></section>`;
+  if (filterList(thisSeason)?.length) body += `<section class="rec"><h3>✨ Fall 2026 Season</h3><ul class="rec-row">${filterList(thisSeason).map(tile).join('')}</ul></section>`;
+  if (filterList(nextSeason)?.length) body += `<section class="rec"><h3>🌱 Upcoming Season</h3><ul class="rec-row">${filterList(nextSeason).map(tile).join('')}</ul></section>`;
+  if (filterList(popular)?.length) body += `<section class="rec"><h3>👑 All-Time Popular</h3><ul class="rec-row">${filterList(popular).map(tile).join('')}</ul></section>`;
+  if (filterList(topRated)?.length) body += `<section class="rec"><h3>⭐ Highest Rated</h3><ul class="rec-row">${filterList(topRated).map(tile).join('')}</ul></section>`;
   main.innerHTML = head + body;
 }
-
 
 function renderCrunchy() {
   const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Trending · Seasonal · By genre</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh picks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
