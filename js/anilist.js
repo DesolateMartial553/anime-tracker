@@ -16,10 +16,10 @@ async function gql(query, variables, signal) {
 }
 
 const SEARCH = `query ($q: String) {
-  Page(perPage: 12) {
-    media(search: $q, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+  Page(perPage: 24) {
+    media(search: $q, type: ANIME, sort: [POPULARITY_DESC, SEARCH_MATCH], isAdult: false) {
       id title { romaji english native } coverImage { large color }
-      episodes format status seasonYear countryOfOrigin
+      episodes format status seasonYear countryOfOrigin description averageScore
     }
   }
 }`;
@@ -59,15 +59,17 @@ export async function searchAnime(q, signal) {
   const data = await gql(SEARCH, { q }, signal);
   return data.Page.media.map((m) => ({
     anilist_id: m.id,
-    title: m.title.english || m.title.romaji,
+    title: m.title.english || m.title.romaji || m.title.native,
     title_native: m.title.native,
-    cover_url: m.coverImage.large,
-    cover_color: m.coverImage.color,
+    cover_url: m.coverImage?.large,
+    cover_color: m.coverImage?.color,
     total_eps: m.episodes,
     format: m.format,
     country: m.countryOfOrigin,
     year: m.seasonYear,
     airing_status: m.status,
+    description: plain(m.description),
+    community: m.averageScore,
   }));
 }
 
