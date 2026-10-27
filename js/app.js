@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -672,6 +672,17 @@ function enableSwipe(dlg) {
 
 /* ---------- search ---------- */
 
+/* ---- Swipe: right = planning, left = completed ---- */
+let swipeStart = null;
+function onSwipe(el, dir) {
+  const r = lastResults?.find((x) => x.anilist_id === Number(el.dataset.id));
+  if (!r) return;
+  const status = dir === 'right' ? 'planning' : (dir === 'left' ? 'completed' : null);
+  if (status) store.add({ ...r, status }, 'swipe');
+}
+
+document.querySelector('#results')?.addEventListener('touchstart', (e) => { const t = e.target.closest('.result'); if (t) swipeStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, target: t }; }, { passive: true });
+document.querySelector('#results')?.addEventListener('touchend', (e) => { if (!swipeStart?.target) return; const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*2) { onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left'); swipeStart.target.style.transform = 'translateX('+(dx>0?60:-60)+'px)'; setTimeout(()=>swipeStart.target.remove(), 200); } swipeStart = null; }, { passive: true });
 function openSearch() {
   openSheet(searchDlg);
   const q = $('#q');
@@ -703,11 +714,12 @@ function renderResults(state) {
     box.innerHTML = `<ul>${lastResults.map((r, i) => {
       const have = store.findByAnilist(r.anilist_id);
       const eps = r.total_eps ? `${r.total_eps} eps` : r.airing_status === 'RELEASING' ? 'airing' : '';
-      return `<li class="result" style="--tint:${tintOf(r)};--i:${Math.min(i, 10)}">
+      return `<li class="result" data-id="${r.anilist_id}" style="--tint:${tintOf(r)};--i:${Math.min(i, 10)}">
         <img class="sticker sm" src="${esc(r.cover_url)}" alt="" loading="lazy">
         <div class="r-info">
           <b>${esc(r.title)}</b>
           ${r.title_native ? `<small>${esc(r.title_native)}</small>` : ''}
+          ${r.genres?.length ? `<div class="r-tags">${r.genres.slice(0, 3).map((g) => `<span class="tag">${esc(g)}</span>`).join('')}</div>` : ''}
           <div class="meta">${badges(r)}${eps ? `<span class="dim">${eps}</span>` : ''}</div>
           <div class="r-actions">${have
             ? `<button class="pill ghost" data-open="${have.id}">On ${esc(STATUS_LABEL[have.status])} ✓</button>`
