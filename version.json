@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.5",
+  "versionCode": 7,
+  "versionName": "1.6",
   "apk": "https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk",
-  "notes": "Couple share UI + offline sync verified. v1.5 APK."
+  "notes": "Couple share UI + offline sync verified. v1.6 APK (genre + swipe + Discover Weekly)."
 }
