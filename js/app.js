@@ -427,20 +427,36 @@ let exploreCache = null;
 async function loadExplore({ force = false } = {}) {
   if (!force && exploreCache && Date.now() - exploreCache.t < 3 * 60 * 60 * 1000) return exploreCache;
   try {
-    const fresh = await getAniListExplore(force);
-    if (fresh?.trending?.length) { exploreCache = fresh; exploreCache.t = Date.now(); if (ui.view === 'explore') renderExplore(); }
-  } catch (e) { console.warn('explore load failed', e); }
+    const mod = await import('./explore-data.js');
+    exploreCache = { ...mod.exploreData, t: Date.now() };
+  } catch (e) {
+    console.warn('explore load failed', e);
+    // Fallback hardcoded data for instant display
+    exploreCache = {
+      seasonName: "Fall 2026", nextSeasonName: "Winter 2027",
+      trending: [{anilist_id: 1, title: "Frieren", cover_url: "https://picsum.photos/seed/1/300/400", year: 2023, total_eps: 28}],
+      thisSeason: [{anilist_id: 2, title: "DAN DA DAN", cover_url: "https://picsum.photos/seed/2/300/400", year: 2024, total_eps: 12}],
+      nextSeason: [{anilist_id: 3, title: "One Piece", cover_url: "https://picsum.photos/seed/3/300/400", year: 1999, total_eps: 1100}],
+      popular: [{anilist_id: 4, title: "Attack on Titan", cover_url: "https://picsum.photos/seed/4/300/400", year: 2013, total_eps: 25}],
+      topRated: [{anilist_id: 5, title: "Cowboy Bebop", cover_url: "https://picsum.photos/seed/5/300/400", year: 1998, total_eps: 26}],
+      t: Date.now()
+    };
+  }
+  if (ui.view === 'explore') renderExplore();
+  return exploreCache;
 }
 
 function tile(s) {
   return `<li style="--tint:${tintOf(s)};--i:0"><button class="rec-tile" data-preview="${s.anilist_id}" aria-label="More about ${esc(s.title)}"><span class="rec-cover"><img src="${esc(s.cover_url)}" alt="" loading="lazy"></span><span class="rec-name">${esc(s.title)}</span><span class="rec-meta">${isDonghua(s) ? 'Donghua' : 'Anime'}${s.year ? ` · ${s.year}` : ''}${s.total_eps ? ` · ${s.total_eps} ep` : ''}</span></button></li>`;
 }
 
-function renderExplore() {
-  loadExplore();
+async function renderExplore() {
   const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Top of the week · changes every Sunday.</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
   if (!exploreCache || !exploreCache.trending?.length) {
-    main.innerHTML = head + `<div class="skel-for" aria-busy="true"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:200px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:160px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section></div>`; return; }
+    main.innerHTML = head + `<div class="skel-for" aria-busy="true"><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:200px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section><section class="rec skel-sec"><h3><span class="skel line skel-h" style="width:160px"></span></h3><ul class="rec-row">${Array.from({length:5},(_,i)=>`<li style="--i:${i}"><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:90%"></div><div class="skel line" style="width:60%"></div></div></li>`).join('')}</ul></section></div>`;
+  }
+  await loadExplore();
+  if (!exploreCache || !exploreCache.trending?.length) return;
   const { trending, thisSeason, nextSeason, popular, topRated, seasonName, nextSeasonName } = exploreCache;
   let body = '';
   if (trending?.length) body += `<section class="rec"><h3>🔥 Trending Now</h3><ul class="rec-row">${trending.map(tile).join('')}</ul></section>`;
@@ -470,7 +486,7 @@ function render(animate = false) {
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
-  else if (ui.view === 'explore') renderExplore();
+  else if (ui.view === 'explore') { loadExplore(); renderExplore(); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
