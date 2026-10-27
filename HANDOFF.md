@@ -1,54 +1,26 @@
-# Cozy Corner Anime Tracker — Handoff
+# Cozy Corner — Session Handoff (v2.7)
 
-## Goal
-Build a cozy anime/donghua watchlist web app + Android APK for the user's girlfriend. Features: AniList search, 5 status lists, episode tracking with airing countdowns, 1-10 heart rating, notes, light/dark mode with animated sakura/stars, backup/restore, Supabase sync with magic-link email auth, in-app update checks, "For you" recommendations from AniList recs + genre similarity, glassmorphism UI with cover-color bleed, editable episode totals, hover lift on cards.
+## Current State (as of Oct 27, 2026)
+- **Repository**: `DesolateMartial553/anime-tracker` on GitHub (`main` branch)
+- **Live Site**: https://desolatemartial553.github.io/anime-tracker/
+- **Android APK**: `download/CozyCorner.apk` (versionCode 19, `v2.7`)
+- **GitHub Releases**: `v1.0.0` through `v2.7.0` (14 total releases)
 
-## Current State
-- **v1.3 shipped 2026-10-26:** For you recs, glass UI, editable episode totals committed (`ef5a417`), APK rebuilt as versionCode 4 / 1.3 (`1b10cf0`), version bump committed (`86e0c23`), all pushed to `main` and live on Pages. Live `version.json` verified serving 4 / 1.3; APK asset verified 3,370,544 bytes.
-- **Release:** `v1.3.0` tagged at `86e0c23` and published as a GitHub Release with the APK attached (2026-10-26), matching v1.0–v1.2.
-- **Build gotchas (2026-10-26):** system JDK is now 27, so Gradle 8.14.3 needs `JAVA_HOME=/usr/lib/jvm/java-21-openjdk`; `app/android/local.properties` had gone missing, recreate with `sdk.dir=/home/desolate/Android/Sdk`.
-- **Repo:** `/home/desolate/Work-Projects/anime-tracker` (clean except this HANDOFF.md, which stays untracked)
-- **Live site:** https://desolatemartial553.github.io/anime-tracker/ (GitHub Pages from repo root)
-- **APK:** `download/CozyCorner.apk` (v1.3, versionCode 4, signed with ~/.keystores/cozy-corner.jks)
-- **Recent work (this session):**
-  - Added **"For you" recommendations** (`js/anilist.js` + `js/app.js`): AniList recs graph + genre/tag similarity fallback, cached 6h, preview sheet before adding, "Because you're watching X" sections
-  - **Glassmorphism overhaul** (`css/style.css`): frosted `backdrop-filter` cards/sheets/nav, cover-color radial gradients (`--tint`), no white borders, hover lift `translateY(-5px)`, stats strip (Shows/Episodes/Avg/Airing)
-  - **Editable episode total** in detail sheet: "44 episodes in total · change" → inline edit → save/cancel, allows +1 past AniList count
-  - **Tabular numbers**, `text-wrap: pretty` on titles/blurbs
-  - **Nano Banana 2 mockup generated** for visual reference
-- **Verified locally** at `http://127.0.0.1:8765/` via Chrome CDP: dark/light shelf, For you (5 sections, 40 tiles), preview, detail with 44-ep edit, +1 past limit, airing view, zero console errors
+## Key Features & Fixes Built
+1. **Swipe Gestures**: Right = Planning, Left = Completed. Saves directly to shelf via `store.add()`, triggers haptic `buzz()`, confetti `burst()`, and a smooth bounce/fade animation (`cubic-bezier`).
+2. **Explore Page**: Official AniList format with 5 sections:
+   - 🔥 Trending Now
+   - ✨ This Season (live seasonal detection)
+   - 🌱 Upcoming (Next Season)
+   - 👑 All-Time Popular
+   - ⭐ Highest Rated
+3. **Blank Screen Fixes**: Resolved data format mismatches between `loadExplore()` (`getAniListExplore()`) and `renderExplore()`.
+4. **Genre Chips & Discover Weekly**: Up to 4 genre chips on search result cards; `getDiscover()` queries anime matching user shelf genre affinity.
 
-## Files Touched
-| File | Changes |
-|------|---------|
-| `js/anilist.js` | +RECS/SIMILAR queries, `getRecommendations()`, `clearRecommendationCache()`, `toShow()`, `plain()` |
-| `js/app.js` | +`recs` state, `loadRecs()`, `renderForYou()`, `openPreview()`/`renderPreview()`, `addRecommended()`, stats strip in `renderList()`, `editingTotal` flow, `total-btn`/`total-row` handlers, nav tab for "For you" |
-| `css/style.css` | Glass tokens (`--glass`, `--glass-line`, `--glass-shine`, `--glass-shadow`, `--wash`), card/air-row/rec-tile/stat/sheet/nav/seg/select restyled, hover lift, tabular nums, text-wrap |
-| `index.html` | +`data-view="foryou"` nav button, `<dialog id="previewDlg">` |
-| `app/www/*` | Synced via `npm run copy-web` (identical to root) |
+## Verification & Build
+- **Syntax**: `node --check` passes cleanly across all modules (`js/*.js`).
+- **Local Test**: `python3 -m http.server 8765` returns HTTP 200, loads `#app` / `#main`.
+- **Android Build**: `gradlew assembleRelease` builds signed APK successfully under Java 21 (`/usr/lib/jvm/java-21-openjdk`).
 
-## What Was Tried and Failed
-- **GPT Image 2.5 mockup:** free tier blocked (`job_minimum_basic_plan_required`)
-- **Z Image mockup:** worked but low fidelity for glass details
-- **Nano Banana 2 mockup:** better fidelity, link above
-- **Chrome DevTools MCP:** wouldn't connect to custom `--user-data-dir` Chrome (DevToolsActivePort not in default location). Used raw CDP driver on port 9222 instead — worked for screenshots.
-
-## Next Steps (from user)
-> Load the `handff` skill and follow its instructions exactly — reset context to a fresh OpenCode session in same dir, new kitty window.
-
-## Key Constraints & Decisions
-- **Vanilla ES modules, no build step** — GitHub Pages hosts root directly
-- **Capacitor Android wrapper** in `app/` — `npm run copy-web && npx cap copy android` then `./gradlew assembleRelease --offline --max-workers=1`
-- **Supabase keys in `js/config.js`** — publishable anon key only; RLS in `supabase.sql` keeps data private
-- **Version bump for new APK:** edit `app/android/app/build.gradle` (`versionCode 4`, `versionName "1.3"`), rebuild, copy to `download/CozyCorner.apk`, update `version.json` with same code + notes
-- **No secrets in repo** — keystore at `~/.keystores/cozy-corner.jks`, properties at `~/.keystores/cozy-corner.properties`
-- **User's hardware:** 2-core Celeron, 7.6 GB RAM — avoid heavy parallel jobs
-
-## Open Questions
-- Does the user want a v1.3 APK build now, or just commit the feature work?
-- Any polish tweaks before committing (e.g., stats strip numbers, hover timing)?
-- Should "For you" trigger on first load or only when tab visited? (Currently: on tab visit)
-
----
-
-*Generated by handff skill — session handoff for continuity*
+## Next Steps / Future Ideas
+- Further UI tweaks or custom user requests for shelf management.
