@@ -455,7 +455,7 @@ function renderExplore() {
 
 
 function renderCrunchy() {
-  const head = `<div class="air-head rec-head"><div><h2>Crunchyroll Top Picks</h2><p class="dim">Trending · Seasonal · By genre</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh picks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
+  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Trending · Seasonal · By genre</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh picks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
   const c = exploreCache;
   if (!c || !c.topPicks?.length) { main.innerHTML = head + `<div class="skel-for" aria-busy="true"><div class="skel-tile"><div class="skel cover tile" style="aspect-ratio:3/4"></div><div class="skel line" style="width:70%"></div></div></div>`; return; }
   const hero = c.topPicks[0];
