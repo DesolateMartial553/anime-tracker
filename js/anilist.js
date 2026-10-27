@@ -19,7 +19,7 @@ const SEARCH = `query ($q: String) {
   Page(perPage: 24) {
     media(search: $q, type: ANIME, sort: [POPULARITY_DESC, SEARCH_MATCH], isAdult: false) {
       id title { romaji english native } coverImage { large color }
-      episodes format status seasonYear countryOfOrigin description averageScore
+      episodes format status seasonYear countryOfOrigin description averageScore genres
     }
   }
 }`;
@@ -57,20 +57,24 @@ const SIMILAR = `query ($tags: [String], $genres: [String], $country: CountryCod
 
 export async function searchAnime(q, signal) {
   const data = await gql(SEARCH, { q }, signal);
-  return data.Page.media.map((m) => ({
-    anilist_id: m.id,
-    title: m.title.english || m.title.romaji || m.title.native,
-    title_native: m.title.native,
-    cover_url: m.coverImage?.large,
-    cover_color: m.coverImage?.color,
-    total_eps: m.episodes,
-    format: m.format,
-    country: m.countryOfOrigin,
-    year: m.seasonYear,
-    airing_status: m.status,
-    description: plain(m.description),
-    community: m.averageScore,
-  }));
+  return data.Page.media.map((m) => {
+    const genreTags = Array.isArray(m.genres) ? m.genres : [];
+    return {
+      anilist_id: m.id,
+      title: m.title.english || m.title.romaji || m.title.native,
+      title_native: m.title.native,
+      cover_url: m.coverImage?.large,
+      cover_color: m.coverImage?.color,
+      total_eps: m.episodes,
+      format: m.format,
+      country: m.countryOfOrigin,
+      year: m.seasonYear,
+      airing_status: m.status,
+      description: plain(m.description),
+      community: m.averageScore,
+      genres: genreTags.map((g) => g.name).slice(0, 4),
+    };
+  });
 }
 
 // AniList descriptions are light HTML; keep the words, drop the markup.
@@ -191,6 +195,19 @@ export async function getRecommendations(sources) {
 
   try { localStorage.setItem(REC_KEY, JSON.stringify({ at: Date.now(), key, data: sections })); } catch {}
   return sections;
+}
+
+/* ---------- Spotify-style Discover Weekly ---------- */
+const DISCOVER = `query ($genres: [String]) {
+  Page(perPage: 10) {
+    media(type: ANIME, isAdult: false, sort: POPULARITY_DESC, genre_in: $genres) { ${MEDIA} }
+  }
+}`;
+
+export async function getDiscover(genres) {
+  if (!genres?.length) return [];
+  const data = await gql(DISCOVER, { genres });
+  return data.Page.media.map(toShow);
 }
 
 export function clearRecommendationCache() {
