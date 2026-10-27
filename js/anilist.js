@@ -263,14 +263,6 @@ const ANILIST_EXPLORE = `query ($season: MediaSeason, $seasonYear: Int, $nextSea
   topRated: Page(perPage: 10) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ${MEDIA} } }
 }`;
 
-function currentSeasonInfo() {
-  const d = new Date(), m = d.getMonth(), y = d.getFullYear();
-  if (m < 3) return { season: 'WINTER', year: y, nextSeason: 'SPRING', nextYear: y, seasonName: `Winter ${y}`, nextSeasonName: `Spring ${y}` };
-  if (m < 6) return { season: 'SPRING', year: y, nextSeason: 'SUMMER', nextYear: y, seasonName: `Spring ${y}`, nextSeasonName: `Summer ${y}` };
-  if (m < 9) return { season: 'SUMMER', year: y, nextSeason: 'FALL', nextYear: y, seasonName: `Summer ${y}`, nextSeasonName: `Fall ${y}` };
-  return { season: 'FALL', year: y, nextSeason: 'WINTER', nextYear: y + 1, seasonName: `Fall ${y}`, nextSeasonName: `Winter ${y + 1}` };
-}
-
 export async function getAniListExplore(force = false) {
   const now = Date.now();
   try {
