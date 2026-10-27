@@ -424,75 +424,22 @@ function placeInd(sel, key) {
 }
 
 let exploreCache = null;
-async function loadExplore({ force = false } = {}) {
-  if (!force && exploreCache && Date.now() - exploreCache.t < 3 * 60 * 60 * 1000) return exploreCache;
-  if (window.STATIC_EXPLORE) {
-    exploreCache = { ...window.STATIC_EXPLORE, t: Date.now() };
-  } else {
-    try {
-      const mod = await import('./explore-data.js');
-      exploreCache = { ...mod.exploreData, t: Date.now() };
-    } catch (e) {
-      console.warn('explore load failed', e);
-    }
-  }
-  if (ui.view === 'explore') renderExplore();
-  return exploreCache;
-}
+async 
 
 function tile(s) {
   return `<li style="--tint:${tintOf(s)};--i:0"><button class="rec-tile" data-preview="${s.anilist_id}" aria-label="More about ${esc(s.title)}"><span class="rec-cover"><img src="${esc(s.cover_url)}" alt="" loading="lazy"></span><span class="rec-name">${esc(s.title)}</span><span class="rec-meta">${isDonghua(s) ? 'Donghua' : 'Anime'}${s.year ? ` · ${s.year}` : ''}${s.total_eps ? ` · ${s.total_eps} ep` : ''}</span></button></li>`;
 }
 
-async function renderExplore() {
-  const activeVibe = window.currentExploreVibe || 'All';
-  const vibes = ['All', 'Fantasy', 'Action', 'Drama', 'Wholesome', 'Adventure', 'Sci-Fi', 'Mystery', 'Comedy', 'Sports'];
-  const vibeHtml = `<div class="chips scroll" style="margin: 12px 0 16px; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;">` + 
-    vibes.map(v => `<button class="chip ${activeVibe === v ? 'active' : ''}" data-vibe="${v}" style="white-space: nowrap; padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15); background: ${activeVibe === v ? '#ff7597' : 'rgba(255,255,255,0.05)'}; color: ${activeVibe === v ? '#fff' : 'inherit'}; cursor: pointer; font-size: 13px;">${v === 'All' ? '✨ All Vibes' : v}</button>`).join('') + 
-    `</div>`;
 
-  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Curated picks · Handcrafted for Cozy Corner</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh explore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>` + vibeHtml;
-  await loadExplore();
-  if (!exploreCache || !exploreCache.trending?.length) return;
-  const { hero, trending, thisSeason, nextSeason, popular, topRated, seasonName, nextSeasonName } = exploreCache;
-  const filterList = (arr) => activeVibe === 'All' ? arr : (arr || []).filter(item => item.vibe === activeVibe);
-  
-  let body = '';
-  if (hero) {
-    body += `<section class="explore-hero" style="margin: 16px 0 24px; padding: 32px; border-radius: 20px; background: linear-gradient(135deg, rgba(100,60,140,0.4), rgba(40,25,60,0.8)), url('${hero.backdrop_url}') center/cover; box-shadow: 0 12px 30px rgba(0,0,0,0.4); display: flex; flex-direction: column; gap: 12px;">
-      <span style="background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 20px; font-size: 12px; width: fit-content; backdrop-filter: blur(4px);">${esc(hero.vibe)}</span>
-      <h2 style="font-size: 28px; font-weight: 700; margin: 0; color: #fff;">${esc(hero.title)}</h2>
-      <p style="max-width: 600px; font-size: 14px; opacity: 0.85; line-height: 1.5; margin: 0;">${esc(hero.tagline)}</p>
-      <button class="pill" data-preview="${hero.anilist_id}" style="width: fit-content; margin-top: 8px; background: #ff7597; color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: 600; cursor: pointer;">✨ Spotlight Preview</button>
-    </section>`;
-  }
-  if (filterList(trending)?.length) body += `<section class="rec"><h3>🔥 Trending Now</h3><ul class="rec-row">${filterList(trending).map(tile).join('')}</ul></section>`;
-  if (filterList(thisSeason)?.length) body += `<section class="rec"><h3>✨ Fall 2026 Season</h3><ul class="rec-row">${filterList(thisSeason).map(tile).join('')}</ul></section>`;
-  if (filterList(nextSeason)?.length) body += `<section class="rec"><h3>🌱 Upcoming Season</h3><ul class="rec-row">${filterList(nextSeason).map(tile).join('')}</ul></section>`;
-  if (filterList(popular)?.length) body += `<section class="rec"><h3>👑 All-Time Popular</h3><ul class="rec-row">${filterList(popular).map(tile).join('')}</ul></section>`;
-  if (filterList(topRated)?.length) body += `<section class="rec"><h3>⭐ Highest Rated</h3><ul class="rec-row">${filterList(topRated).map(tile).join('')}</ul></section>`;
-  main.innerHTML = head + body;
-}
 
-function renderCrunchy() {
-  const head = `<div class="air-head rec-head"><div><h2>Explore</h2><p class="dim">Trending · Seasonal · By genre</p></div><button class="icon-btn" data-action="explore-refresh" aria-label="Refresh picks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></button></div>`;
-  const c = exploreCache;
-  if (!c || !c.topPicks?.length) { main.innerHTML = head + `<div class="skel-for" aria-busy="true"><div class="skel-tile"><div class="skel cover tile" style="aspect-ratio:3/4"></div><div class="skel line" style="width:70%"></div></div></div>`; return; }
-  const hero = c.topPicks[0];
-  const row = (arr) => arr?.map(t => `<li style="--tint:${tintOf(t)}"><button class="rec-tile" data-preview="${t.anilist_id}"><span class="rec-cover"><img src="${esc(t.cover_url)}" alt=""></span><b>${esc(t.title)}</b><span class="rec-meta">${t.year||''}</span></button></li>`).join('');
-  let body = `<section class="crunchy-hero"><button class="cover-btn" data-preview="${hero.anilist_id}" aria-label="${esc(hero.title)}"><img src="${esc(hero.cover_url)}" alt=""></button><div><h2>${esc(hero.title)}</h2><p>${esc(hero.description ? hero.description.slice(0,140) : '')}</p><button class="pill" data-addrec="watching">▶ Watching</button></div></section>`;
-  body += `<section><h3>Simulcasts</h3><ul class="rec-row">${row(c.simulcasts)}</ul></section>`;
-  body += `<section><h3>Action Hits</h3><ul class="rec-row">${row(c.actionHit)}</ul></section>`;
-  body += `<section><h3>Comedy Picks</h3><ul class="rec-row">${row(c.comedyHit)}</ul></section>`;
-  main.innerHTML = head + body;
-}
+
 function render(animate = false) {
   const chips = $('.chips.scroll');
   const scrollLeft = chips ? chips.scrollLeft : 0;
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
-  else if (ui.view === 'explore') { loadExplore(); renderExplore(); }
+  else if (ui.view === 'explore') { ui.view = 'foryou'; renderForYou(); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
