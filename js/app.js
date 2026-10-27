@@ -1082,6 +1082,9 @@ document.addEventListener('click', (ev) => {
   } else if (d.action === 'explore-refresh') {
     toast('Refreshing explore ✿');
     loadExplore({ force: true });
+  } else if (d.vibe) {
+    window.currentExploreVibe = d.vibe;
+    renderExplore();
   } else if (d.preview) {
     openPreview(Number(d.preview));
   } else if (d.addrec) {
