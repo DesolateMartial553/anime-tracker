@@ -423,10 +423,7 @@ function placeInd(sel, key) {
   indPos[key] = to;
 }
 
-let exploreCache = null;
-async 
-
-function tile(s) {
+async function tile(s) {
   return `<li style="--tint:${tintOf(s)};--i:0"><button class="rec-tile" data-preview="${s.anilist_id}" aria-label="More about ${esc(s.title)}"><span class="rec-cover"><img src="${esc(s.cover_url)}" alt="" loading="lazy"></span><span class="rec-name">${esc(s.title)}</span><span class="rec-meta">${isDonghua(s) ? 'Donghua' : 'Anime'}${s.year ? ` · ${s.year}` : ''}${s.total_eps ? ` · ${s.total_eps} ep` : ''}</span></button></li>`;
 }
 
@@ -439,7 +436,6 @@ function render(animate = false) {
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
-  else if (ui.view === 'explore') { ui.view = 'list'; saveUi(); render(true); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
@@ -1026,12 +1022,6 @@ document.addEventListener('click', (ev) => {
   } else if ('recRefresh' in d) {
     toast('Looking for fresh picks ✿');
     loadRecs({ force: true });
-  } else if (d.action === 'explore-refresh') {
-    toast('Refreshing explore ✿');
-    loadExplore({ force: true });
-  } else if (d.vibe) {
-    window.currentExploreVibe = d.vibe;
-    renderExplore();
   } else if (d.preview) {
     openPreview(Number(d.preview));
   } else if (d.addrec) {

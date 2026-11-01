@@ -8,5 +8,5 @@ app/android/app/src/main/assets/public/
 app/android/capacitor-cordova-android-plugins/build/
 *.apk
 
-# ...except the published app download
-!download/CozyCorner.apk
+# Built APKs are never committed: they live on GitHub Releases.
+app/dist/

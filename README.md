@@ -8,13 +8,13 @@ It comes two ways, built from the same code:
 | | Where | Best for |
 |---|---|---|
 | 🌐 **Website** | **https://desolatemartial553.github.io/anime-tracker/** | Laptop, or any phone browser |
-| 📱 **Android app** | **[Download CozyCorner.apk](https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk)** (in this repo at [`download/CozyCorner.apk`](download/CozyCorner.apk)) | Her Android phone: opens like a real app and works offline |
+| 📱 **Android app** | **[Download CozyCorner.apk](https://github.com/DesolateMartial553/anime-tracker/releases/latest/download/CozyCorner.apk)** (attached to the latest [GitHub Release](https://github.com/DesolateMartial553/anime-tracker/releases/latest)) | Her Android phone: opens like a real app and works offline |
 
 ---
 
 ## 📱 Installing the Android app
 
-1. On the phone, open **https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk**
+1. On the phone, open **https://github.com/DesolateMartial553/anime-tracker/releases/latest/download/CozyCorner.apk**
    (or open the website in Chrome and tap **Download** on the "Get the Cozy Corner app" card at the bottom).
 2. When the download finishes, tap **CozyCorner.apk** in the notification or in **Files → Downloads**.
 3. Android will say installing from this source isn't allowed yet. Tap **Settings**, turn on
@@ -140,7 +140,7 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
 | `js/config.js` | Supabase keys, subtitle text, APK download link |
 | `supabase.sql` | Database table + row-level security policies |
 | `app/` | Capacitor Android project that wraps the website |
-| `download/CozyCorner.apk` | The current signed Android build |
+| `app/scripts/release.sh` | Builds **and verifies** a signed APK: sets the versions, syncs the site, runs Gradle, checks the APK |
 | `version.json` | Latest app version; installed apps check this to offer updates |
 
 ### Run the website locally
@@ -149,20 +149,26 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
 
 ### Build a new APK
 
-    cd app
-    npm install
-    export JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=~/Android/Sdk
-    npm run copy-web && npx cap copy android
-    cd android && ./gradlew assembleRelease --offline --max-workers=1
-    cp app/build/outputs/apk/release/app-release.apk ../../download/CozyCorner.apk
+    cd app && npm install        # first time only
+    ./scripts/release.sh 2.8.1 21
+
+That one command sets `versionCode`/`versionName` in `app/android/app/build.gradle` **and**
+`version.json`, copies the website into the app, builds the signed APK, puts it at
+`app/dist/CozyCorner.apk`, and then checks the APK itself: the bundled `index.html` and `js/app.js`
+must be byte-identical to the site, it must contain no `explore` code, and the version inside the
+APK must match the arguments. It never pushes or publishes anything.
 
 ### Publishing an update
-1. Increase `versionCode` (and `versionName`) in `app/android/app/build.gradle`.
-2. Build the APK (above) and copy it to `download/CozyCorner.apk`.
-3. Set the same `versionCode` / `versionName` (and a one-line `notes`) in `version.json`.
-4. Commit and push. Installed apps see the new `version.json` and show the update card.
-5. Optional: also attach the APK to a new GitHub Release so Obtainium picks it up
-   (`gh release create v1.x.0 download/CozyCorner.apk`).
+1. `app/scripts/release.sh <versionName> <versionCode>` — read the verification output at the end.
+2. Create the GitHub release **first**, so the update link works the moment `version.json` goes live:
+
+       gh release create v2.8.1 app/dist/CozyCorner.apk -R DesolateMartial553/anime-tracker \
+         --title "Cozy Corner v2.8.1" --latest
+
+3. Commit and push (`version.json` + the version bump). Installed apps fetch `version.json`, see a
+   higher `versionCode`, and show the update card; the **Update** button downloads the release asset.
+4. APKs are **never committed** — `*.apk` and `app/dist/` are gitignored. GitHub Releases is the only
+   place an APK is published (Obtainium reads the same release).
 
 - Release builds are signed with `~/.keystores/cozy-corner.jks` (settings in
   `~/.keystores/cozy-corner.properties`, never committed). **Keep a backup:** Android only installs an

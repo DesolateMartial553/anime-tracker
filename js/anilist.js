@@ -31,7 +31,7 @@ const AIRING = `query ($ids: [Int]) {
 }`;
 
 // Fields shared by recommendations and the "similar shows" fallback.
-const MEDIA = `id title { english romaji } coverImage { large } episodes year status`;
+const MEDIA = `id title { english romaji } coverImage { large } episodes seasonYear status`;
 
 // AniList's own "if you liked this, you might like" graph, ranked by how many
 // people agreed with each recommendation.
@@ -209,15 +209,6 @@ export async function getDiscover(genres) {
   return data.Page.media.map(toShow);
 }
 
-/* ---------- AniList Official Explore / Browse ---------- */
-function currentSeasonInfo() {
-  const d = new Date(), m = d.getMonth(), y = d.getFullYear();
-  if (m < 3) return { season: 'WINTER', year: y, nextSeason: 'SPRING', nextYear: y, seasonName: `Winter ${y}`, nextSeasonName: `Spring ${y}` };
-  if (m < 6) return { season: 'SPRING', year: y, nextSeason: 'SUMMER', nextYear: y, seasonName: `Spring ${y}`, nextSeasonName: `Summer ${y}` };
-  if (m < 9) return { season: 'SUMMER', year: y, nextSeason: 'FALL', nextYear: y, seasonName: `Summer ${y}`, nextSeasonName: `Fall ${y}` };
-  return { season: 'FALL', year: y, nextSeason: 'WINTER', nextYear: y + 1, seasonName: `Fall ${y}`, nextSeasonName: `Winter ${y + 1}` };
-}
-
 /* ---------- Crunchyroll-style "Top Picks For You" & Browse Grid ---------- */
 const CRUNCHY_HOME = `query {
   topPicks: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: [TRENDING_DESC, POPULARITY_DESC]) { ${MEDIA} genres } }
@@ -253,29 +244,3 @@ export function clearRecommendationCache() {
   try { localStorage.removeItem(REC_KEY); } catch {}
 }
 
-/* ---------- Restore AniLit Format (v2.0 browse) ---------- */
-const ANILIST_EXPLORE = `query ($season: MediaSeason, $seasonYear: Int, $nextSeason: MediaSeason, $nextSeasonYear: Int) {
-  trending: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: TRENDING_DESC) { ${MEDIA} } }
-  thisSeason: Page(perPage: 6) { media(type: ANIME, isAdult: false, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
-  nextSeason: Page(perPage: 6) { media(type: ANIME, isAdult: false, season: $nextSeason, seasonYear: $nextSeasonYear, sort: POPULARITY_DESC) { ${MEDIA} } }
-  popular: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: POPULARITY_DESC) { ${MEDIA} } }
-  topRated: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ${MEDIA} } }
-}`;
-
-export async function getAniListExplore(force = false) {
-  const now = Date.now();
-  try {
-    const c = JSON.parse(localStorage.getItem('cc.anilist_explore.v1') || '{}');
-    if (!force && c.at && now - c.at < 3 * 60 * 60 * 1000 && c.trending?.length) return c;
-  } catch {}
-  const info = currentSeasonInfo();
-  const data = await gql(ANILIST_EXPLORE, { season: info.season, seasonYear: info.year, nextSeason: info.nextSeason, nextSeasonYear: info.nextYear });
-  const res = { at: now, seasonName: info.seasonName, nextSeasonName: info.nextSeasonName,
-    trending: (data.trending?.media || []).map(toShow),
-    thisSeason: (data.thisSeason?.media || []).map(toShow),
-    nextSeason: (data.nextSeason?.media || []).map(toShow),
-    popular: (data.popular?.media || []).map(toShow),
-    topRated: (data.topRated?.media || []).map(toShow) };
-  try { localStorage.setItem('cc.anilist_explore.v1', JSON.stringify(res)); } catch {}
-  return res;
-}

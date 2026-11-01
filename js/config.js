@@ -7,4 +7,4 @@ export const SUPABASE_ANON_KEY = 'sb_publishable_-xaX0yD8kcJXDnlH_6bjFw_iCKLGST-
 export const SUBTITLE = 'just for my sweet princess';
 
 // Where the "Get the app" banner on Android points.
-export const APK_URL = 'https://desolatemartial553.github.io/anime-tracker/download/CozyCorner.apk';
+export const APK_URL = 'https://github.com/DesolateMartial553/anime-tracker/releases/latest/download/CozyCorner.apk';
