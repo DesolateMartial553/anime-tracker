@@ -196,50 +196,6 @@ export async function getRecommendations(sources) {
   return sections;
 }
 
-/* ---------- Spotify-style Discover Weekly ---------- */
-const DISCOVER = `query ($genres: [String]) {
-  Page(perPage: 10) {
-    media(type: ANIME, isAdult: false, sort: POPULARITY_DESC, genre_in: $genres) { ${MEDIA} }
-  }
-}`;
-
-export async function getDiscover(genres) {
-  if (!genres?.length) return [];
-  const data = await gql(DISCOVER, { genres });
-  return data.Page.media.map(toShow);
-}
-
-/* ---------- Crunchyroll-style "Top Picks For You" & Browse Grid ---------- */
-const CRUNCHY_HOME = `query {
-  topPicks: Page(perPage: 6) { media(type: ANIME, isAdult: false, sort: [TRENDING_DESC, POPULARITY_DESC]) { ${MEDIA} genres } }
-  simulcasts: Page(perPage: 6) { media(type: ANIME, isAdult: false, status: RELEASING, sort: POPULARITY_DESC) { ${MEDIA} genres } }
-  actionHit: Page(perPage: 6) { media(type: ANIME, isAdult: false, genre: "Action", sort: SCORE_DESC) { ${MEDIA} genres } }
-  comedyHit: Page(perPage: 6) { media(type: ANIME, isAdult: false, genre: "Comedy", sort: POPULARITY_DESC) { ${MEDIA} genres } }
-}`;
-
-const CRUNCHY_KEY = 'cc.crunchy_home.v1';
-const CRUNCHY_TTL = 3 * 60 * 60 * 1000;
-
-export async function getCrunchyHome(force = false) {
-  const now = Date.now();
-  if (!force) {
-    try {
-      const c = JSON.parse(localStorage.getItem(CRUNCHY_KEY) || '{}');
-      if (c.at && now - c.at < CRUNCHY_TTL && c.topPicks?.length) return c;
-    } catch {}
-  }
-  const data = await gql(CRUNCHY_HOME);
-  const res = {
-    at: now,
-    topPicks: (data.topPicks?.media || []).map(toShow),
-    simulcasts: (data.simulcasts?.media || []).map(toShow),
-    actionHit: (data.actionHit?.media || []).map(toShow),
-    comedyHit: (data.comedyHit?.media || []).map(toShow),
-  };
-  try { localStorage.setItem(CRUNCHY_KEY, JSON.stringify(res)); } catch {}
-  return res;
-}
-
 export function clearRecommendationCache() {
   try { localStorage.removeItem(REC_KEY); } catch {}
 }

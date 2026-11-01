@@ -19,6 +19,48 @@ const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } 
 const cacheKey = () => (user ? 'cc.cache.' + user.id : LOCAL_KEY);
 const pick = (o) => Object.fromEntries(COLUMNS.filter((c) => c in o).map((c) => [c, o[c]]));
 
+const queueKey = () => (user ? 'cc.queue.' + user.id : null);
+const getQueue = () => (queueKey() ? readLS(queueKey(), []) : []);
+const setQueue = (q) => { if (queueKey()) writeLS(queueKey(), q); };
+export const pendingCount = () => getQueue().length;
+
+function enqueue(op) {
+  const q = getQueue();
+  q.push(op);
+  setQueue(q);
+}
+
+export async function flushQueue() {
+  if (!sb || !user || !navigator.onLine) return;
+  const q = getQueue();
+  // Replay queued writes; drop non-network errors and continue; stop on network error.
+  while (q.length) {
+    const item = q[0];
+    try {
+      let res;
+      if (item.op === 'add') res = await sb.from('entries').upsert(item.row, { onConflict: 'id' });
+      else if (item.op === 'update') res = await sb.from('entries').update(pick(item.patch)).eq('id', item.id);
+      else if (item.op === 'remove') res = await sb.from('entries').delete().eq('id', item.id);
+      
+      if (res.error) {
+        if (isNetworkError(res.error)) break;
+        console.warn('Queue item failed, dropping:', item, res.error);
+        q.shift();
+        setQueue(q);
+      } else {
+        q.shift();
+        setQueue(q);
+      }
+    } catch (err) {
+      if (isNetworkError(err)) break;
+      console.warn('Queue item threw, dropping:', item, err);
+      q.shift();
+      setQueue(q);
+    }
+  }
+  emit();
+}
+
 function emit() {
   writeLS(cacheKey(), entries);
   listeners.forEach((fn) => fn(entries));
@@ -51,10 +93,16 @@ async function startCloud(u) {
   emit();
   // Show the cached list straight away; the server copy replaces it when it arrives.
   migrateLocal().then(refresh).catch((err) => console.warn('sync failed', err));
-  // Pick up changes made on her other device when she comes back to the app.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refresh().catch(() => {});
-  });
+  
+  const handleSync = (ev) => {
+    if (ev?.type === 'online' || document.visibilityState === 'visible') {
+      flushQueue().then(refresh).catch(() => {});
+    }
+  };
+  document.addEventListener('visibilitychange', handleSync);
+  window.addEventListener('online', handleSync);
+  
+  flushQueue().catch(() => {});
 }
 
 // Anything saved before syncing was set up gets uploaded on first sign-in.
@@ -71,7 +119,22 @@ export async function refresh() {
   const { data, error } = await sb.from('entries').select('*').order('updated_at', { ascending: false });
   if (error) throw error;
   entries = data;
+  // Apply queued patches on top of server rows so locally-queued changes aren't lost
+  const q = getQueue();
+  for (const item of q) {
+    if (item.op === 'add') {
+      if (!entries.find((e) => e.id === item.row.id)) entries = [item.row, ...entries];
+    } else if (item.op === 'update') {
+      entries = entries.map((e) => (e.id === item.id ? { ...e, ...item.patch } : e));
+    } else if (item.op === 'remove') {
+      entries = entries.filter((e) => e.id !== item.id);
+    }
+  }
   emit();
+}
+
+function isNetworkError(err) {
+  return (err instanceof TypeError) || (typeof navigator !== 'undefined' && navigator.onLine === false) || (err?.message && /fetch|network|Failed to fetch/i.test(err.message));
 }
 
 export async function add(show, status) {
@@ -90,11 +153,25 @@ export async function add(show, status) {
   entries = [row, ...entries];
   emit();
   if (sb && user) {
-    const { error } = await sb.from('entries').insert(row);
-    if (error) {
+    try {
+      const { error } = await sb.from('entries').insert(row);
+      if (error) {
+        if (isNetworkError(error)) {
+          enqueue({ op: 'add', row });
+          return row;
+        }
+        entries = entries.filter((e) => e.id !== row.id);
+        emit();
+        throw error;
+      }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        enqueue({ op: 'add', row });
+        return row;
+      }
       entries = entries.filter((e) => e.id !== row.id);
       emit();
-      throw error;
+      throw err;
     }
   }
   return row;
@@ -107,11 +184,25 @@ export async function update(id, patch) {
   entries = entries.map((e) => (e.id === id ? next : e));
   emit();
   if (sb && user) {
-    const { error } = await sb.from('entries').update(pick({ ...patch, updated_at: next.updated_at })).eq('id', id);
-    if (error) {
+    try {
+      const { error } = await sb.from('entries').update(pick({ ...patch, updated_at: next.updated_at })).eq('id', id);
+      if (error) {
+        if (isNetworkError(error)) {
+          enqueue({ op: 'update', id, patch: { ...patch, updated_at: next.updated_at } });
+          return;
+        }
+        entries = entries.map((e) => (e.id === id ? prev : e));
+        emit();
+        throw error;
+      }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        enqueue({ op: 'update', id, patch: { ...patch, updated_at: next.updated_at } });
+        return;
+      }
       entries = entries.map((e) => (e.id === id ? prev : e));
       emit();
-      throw error;
+      throw err;
     }
   }
 }
@@ -121,11 +212,25 @@ export async function remove(id) {
   entries = entries.filter((e) => e.id !== id);
   emit();
   if (sb && user) {
-    const { error } = await sb.from('entries').delete().eq('id', id);
-    if (error) {
+    try {
+      const { error } = await sb.from('entries').delete().eq('id', id);
+      if (error) {
+        if (isNetworkError(error)) {
+          enqueue({ op: 'remove', id });
+          return;
+        }
+        entries = prev;
+        emit();
+        throw error;
+      }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        enqueue({ op: 'remove', id });
+        return;
+      }
       entries = prev;
       emit();
-      throw error;
+      throw err;
     }
   }
 }
@@ -209,9 +314,11 @@ export async function coupleInvite() {
 }
 export async function coupleAccept(code) {
   if (!sb || !user) return;
-  const { data } = await sb.from('couples').select('*').eq('code', code.toUpperCase()).single();
+  const { data, error: selectError } = await sb.from('couples').select('*').eq('code', code.toUpperCase()).single();
+  if (selectError) throw selectError;
   if (!data || data.b) throw new Error('bad or used code');
-  await sb.from('couples').update({ b: user.id }).eq('a', data.a);
+  const { error: updateError } = await sb.from('couples').update({ b: user.id }).eq('a', data.a);
+  if (updateError) throw updateError;
 }
 
 export async function signOut() {

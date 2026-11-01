@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getDiscover, getCrunchyHome } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -202,7 +202,7 @@ function renderList() {
     ${items.length ? `<div class="cards">${items.map(card).join('')}</div>` : emptyState()}
     ${statsStrip(shelfStats(list))}
     ${appPromo()}
-    ${store.cloudEnabled ? '' : '<p class="local-note">Saved on this device only.</p>'}`;
+    ${store.cloudEnabled ? (store.pendingCount() > 0 ? `<p class="local-note">${store.pendingCount()} change${store.pendingCount() === 1 ? '' : 's'} waiting to sync</p>` : '') : '<p class="local-note">Saved on this device only.</p>'}`;
 }
 
 /* ---------- airing view ---------- */
@@ -422,14 +422,6 @@ function placeInd(sel, key) {
   apply(to);
   indPos[key] = to;
 }
-
-async function tile(s) {
-  return `<li style="--tint:${tintOf(s)};--i:0"><button class="rec-tile" data-preview="${s.anilist_id}" aria-label="More about ${esc(s.title)}"><span class="rec-cover"><img src="${esc(s.cover_url)}" alt="" loading="lazy"></span><span class="rec-name">${esc(s.title)}</span><span class="rec-meta">${isDonghua(s) ? 'Donghua' : 'Anime'}${s.year ? ` · ${s.year}` : ''}${s.total_eps ? ` · ${s.total_eps} ep` : ''}</span></button></li>`;
-}
-
-
-
-
 function render(animate = false) {
   const chips = $('.chips.scroll');
   const scrollLeft = chips ? chips.scrollLeft : 0;
@@ -507,6 +499,8 @@ async function setProgress(id, value, fromRect = null) {
   const total = totalOf(e);
   value = Math.max(0, total ? Math.min(total, value) : value);
   if (Number.isNaN(value) || value === e.progress) return renderDetail();
+  const prevProgress = e.progress;
+  const prevStatus = e.status;
   const prevPct = pctOf(e);
   const patch = { progress: value };
   if (value > e.progress && ['planning', 'paused', 'dropped'].includes(e.status)) patch.status = 'watching';
@@ -517,6 +511,10 @@ async function setProgress(id, value, fromRect = null) {
   if (!(await pending)) return;
   if (total && value === total && e.status !== 'completed') {
     toast(`That was the last episode of ${e.title}!`, { label: 'Mark completed', fn: () => setStatus(id, 'completed') });
+  } else if (patch.status && fromRect) {
+    toast(`Episode ${value} ✿`, { label: 'Undo', fn: () => change(id, { progress: prevProgress, status: prevStatus }) });
+  } else if (fromRect) {
+    toast(`Episode ${value} ✿`, { label: 'Undo', fn: () => change(id, { progress: prevProgress }) });
   } else if (patch.status) {
     toast('Moved to Watching ✿');
   }
@@ -525,6 +523,8 @@ async function setProgress(id, value, fromRect = null) {
 async function setStatus(id, status) {
   const e = store.get(id);
   if (!e || e.status === status) return;
+  const prevStatus = e.status;
+  const prevProgress = e.progress;
   const patch = { status };
   const total = totalOf(e);
   if (status === 'completed' && total) patch.progress = total;
@@ -533,7 +533,7 @@ async function setStatus(id, status) {
     celebrate();
     toast(`${e.title} is finished!`, null, true);
   } else {
-    toast(`Moved to ${STATUS_LABEL[status]}`);
+    toast(`Moved to ${STATUS_LABEL[status]}`, { label: 'Undo', fn: () => change(id, { status: prevStatus, progress: prevProgress }) });
   }
   await pending;
 }
@@ -679,19 +679,23 @@ function enableSwipe(dlg) {
 
 /* ---------- search ---------- */
 
-/* ---- Swipe: right = planning, left = completed ---- */
+/* ---- Swipe: right = planning only ---- */
 let swipeStart = null;
 function onSwipe(el, dir) {
+  if (dir !== 'right') return; // only swipe-right adds to Plan to watch
   const r = lastResults?.find((x) => x.anilist_id === Number(el.dataset.id));
   if (!r) return;
-  const status = dir === 'right' ? 'planning' : (dir === 'left' ? 'completed' : null);
-  if (status) {
-    store.add(r, status);
-    buzz(24);
-    toast(`Added ${r.title} to ${STATUS_LABEL[status]} ✿`);
-    const rect = el.getBoundingClientRect();
-    burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 8, dist: 50, size: 14 });
-  }
+  if (store.findByAnilist(r.anilist_id)) return; // already on a list
+  const pending = store.add(r, 'planning');
+  safe(pending).then((ok) => {
+    if (ok) {
+      const rect = el.getBoundingClientRect();
+      buzz(24);
+      toast('Added to Plan to watch ✿');
+      burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 8, dist: 50, size: 14 });
+      renderResults('');
+    }
+  });
 }
 
 document.addEventListener('touchstart', (e) => {
@@ -704,12 +708,17 @@ document.addEventListener('touchend', (e) => {
   const dx = e.changedTouches[0].clientX - swipeStart.x;
   const dy = e.changedTouches[0].clientY - swipeStart.y;
   if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - swipeStart.ts < 600) {
-    onSwipe(swipeStart.target, dx > 0 ? 'right' : 'left');
-    const el = swipeStart.target;
-    el.style.transition = 'transform .35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity .3s ease-out';
-    el.style.transform = `translateX(${dx > 0 ? 160 : -160}px) rotate(${dx > 0 ? 12 : -12}deg) scale(0.85)`;
-    el.style.opacity = '0';
-    setTimeout(() => { el.style.display = 'none'; }, 300);
+    if (dx > 0) {
+      const r = lastResults?.find((x) => x.anilist_id === Number(swipeStart.target.dataset.id));
+      if (r && !store.findByAnilist(r.anilist_id)) {
+        onSwipe(swipeStart.target, 'right');
+        const el = swipeStart.target;
+        el.style.transition = 'transform .35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity .3s ease-out';
+        el.style.transform = 'translateX(160px) rotate(12deg) scale(0.85)';
+        el.style.opacity = '0';
+        setTimeout(() => { el.style.transform = ''; el.style.opacity = ''; el.style.transition = ''; renderResults(''); }, 300);
+      }
+    }
   }
   swipeStart = null;
 }, { passive: true });
@@ -725,6 +734,7 @@ function renderResults(state) {
   const box = $('#results');
   if (state === null) {
     box.innerHTML = `<div class="hint"><p>Search by English, romaji or native title.</p>
+      <p class="tip">Tip: swipe a result right to add it to Plan to watch.</p>
       <div class="chips wrap">${SUGGESTIONS.map((s) => `<button class="chip" data-suggest="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   } else if (state === 'loading') {
     box.innerHTML = `<ul class="skel-results" aria-busy="true" aria-label="Searching">${Array.from({ length: 4 }, (_, i) => `
