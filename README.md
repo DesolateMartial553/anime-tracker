@@ -160,14 +160,23 @@ APK must match the arguments. It never pushes or publishes anything.
 
 ### Publishing an update
 1. `app/scripts/release.sh <versionName> <versionCode>` — read the verification output at the end.
-2. Create the GitHub release **first**, so the update link works the moment `version.json` goes live:
+2. Commit the version bump and `version.json`, then push:
 
-       gh release create v2.8.1 app/dist/CozyCorner.apk -R DesolateMartial553/anime-tracker \
-         --title "Cozy Corner v2.8.1" --latest
+       git commit -am "v2.8.2: ..."
+       git push origin main
 
-3. Commit and push (`version.json` + the version bump). Installed apps fetch `version.json`, see a
-   higher `versionCode`, and show the update card; the **Update** button downloads the release asset.
-4. APKs are **never committed** — `*.apk` and `app/dist/` are gitignored. GitHub Releases is the only
+3. Create the GitHub release against the commit you just pushed:
+
+       gh release create v2.8.2 app/dist/CozyCorner.apk -R DesolateMartial553/anime-tracker \
+         --title "Cozy Corner v2.8.2" --target "$(git rev-parse HEAD)" --latest
+
+   Push first because Pages needs about a minute to deploy the new `version.json`: the release has to
+   exist by the time the update prompt appears, or the prompt points at a missing file. Always pass
+   `--target "$(git rev-parse HEAD)"` so the tag lands on the pushed commit — v2.8.1's tag points at
+   the old v2.8 commit for exactly that reason (its APK asset is fine; see `HANDOFF.md`).
+4. Installed apps fetch `version.json`, see a higher `versionCode`, and show the update card; the
+   **Update** button downloads the release asset.
+5. APKs are **never committed** — `*.apk` and `app/dist/` are gitignored. GitHub Releases is the only
    place an APK is published (Obtainium reads the same release).
 
 - Release builds are signed with `~/.keystores/cozy-corner.jks` (settings in
