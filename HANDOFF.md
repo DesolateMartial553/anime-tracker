@@ -26,16 +26,28 @@ One script, and it refuses to finish unless the APK is right:
    byte-identical to the site, the APK must contain no `explore`, and `aapt2 dump badging` must report
    the requested versionCode/versionName. It prints the timestamp and sha256.
 
-It never pushes, tags or publishes. Publishing is manual, and the **release goes up first** so the
-update URL works the moment `version.json` goes live:
+It never pushes, tags or publishes. Publishing is manual, in this order:
 
-    gh release create v2.8.1 app/dist/CozyCorner.apk -R DesolateMartial553/anime-tracker \
-      --title "Cozy Corner v2.8.1" --latest
-    git push origin main
+    git commit -am "v2.8.2: ..."          # 1. commit the version bump + version.json
+    git push origin main                  # 2. push, so Pages starts deploying version.json
+    gh release create v2.8.2 app/dist/CozyCorner.apk \
+      -R DesolateMartial553/anime-tracker --title "Cozy Corner v2.8.2" \
+      --target "$(git rev-parse HEAD)" --latest        # 3. release, tagged at the pushed commit
+
+Always pass `--target "$(git rev-parse HEAD)"`. Pages needs about a minute to deploy the new
+`version.json`; the release must exist by the time it does, otherwise the update prompt points at a
+missing asset. Committing and pushing first, then releasing against the pushed commit, gets both
+right — and the tag lands on the real commit.
 
 Installed apps fetch `https://desolatemartial553.github.io/anime-tracker/version.json`, compare
 `versionCode` with the installed build, and the Update card downloads the release asset. Obtainium
 reads the same release.
+
+**Known issue (2026-11-01, deliberately not fixed):** the `v2.8.1` tag points at `21ac100` (the old
+v2.8 commit) because that release was created *before* the push, without `--target`. The owner decided
+to leave the tag and release alone. The APK attached to it is the correct one — 3,372,744 bytes,
+sha256 `7089024d5040c6dc6aa41861773a317547ed70d59575ffd69341bdd5c0ab4e90`, versionCode 21 /
+versionName 2.8.1. Only the tag's commit is wrong; nothing downloads from the tag.
 
 ## What changed in v2.8.1
 1. **Explore is gone for real.** `js/explore-data.js`, `js/explore-embed.js`, `getAniListExplore()`,
