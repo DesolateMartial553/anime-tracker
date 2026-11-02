@@ -117,7 +117,9 @@ printf '%s' "$CAP_CFG" | node -e '
 ' || fail "APK's capacitor.config.json does not load the live site with errorPath offline.html"
 echo "ok  assets/capacitor.config.json loads the live site, offline fallback set"
 
-unzip -l "$DIST_APK" assets/public/offline.html | grep -qE ' assets/public/offline\.html$' \
+# Read the listing first: `unzip | grep -q` can die of SIGPIPE under pipefail when grep exits early.
+APK_FILES=$(unzip -Z1 "$DIST_APK")
+grep -qx 'assets/public/offline.html' <<<"$APK_FILES" \
   || fail "APK has no assets/public/offline.html"
 echo "ok  assets/public/offline.html is in the APK"
 
