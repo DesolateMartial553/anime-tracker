@@ -175,6 +175,15 @@ function onRealtimeStatus(status) {
   }
 }
 
+// Timestamps come in three shapes: browser ISO ('…T……Z'), PostgREST ('…T…+00:00') and
+// Postgres text ('...  ...+00' — space, no T). Compare them as times, never as strings.
+const ts = (v) => {
+  let s = String(v || '').replace(' ', 'T');
+  if (/[+-][0-9]{2}$/.test(s)) s += ':00'; // short Postgres offset like +00
+  const n = Date.parse(s);
+  return Number.isNaN(n) ? 0 : n;
+};
+
 // Our own writes echo back here too — the updated_at comparison makes that a no-op.
 function onRealtimeChange({ eventType, new: row, old } = {}) {
   if (eventType === 'DELETE') {
@@ -194,7 +203,7 @@ function onRealtimeChange({ eventType, new: row, old } = {}) {
   if (i === -1) {
     entries = [pick(row), ...entries];
   } else {
-    if (String(row.updated_at || '') <= String(entries[i].updated_at || '')) return;
+    if (ts(row.updated_at) <= ts(entries[i].updated_at)) return;
     entries = entries.map((e, j) => (j === i ? pick(row) : e));
   }
   emit();
@@ -382,7 +391,7 @@ export async function importBackup(text) {
       byShow.set(s.anilist_id, row);
       changed.push(row);
       added++;
-    } else if ((s.updated_at || '') > (have.updated_at || '')) {
+    } else if (ts(s.updated_at) > ts(have.updated_at)) {
       const row = pick({ ...have, ...s, id: have.id, user_id: have.user_id });
       byShow.set(s.anilist_id, row);
       changed.push(row);
