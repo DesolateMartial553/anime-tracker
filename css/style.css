@@ -217,8 +217,8 @@ svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; 
 @keyframes syncSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sync-pill[data-state="busy"] .sync-ico { animation: none; } }
 .sync-pill .sync-count {
-  min-width: 15px; padding: 0 4px; border-radius: 999px;
-  background: currentColor; color: var(--paper); font-size: 0.62rem; text-align: center;
+  background: var(--pink); color: #fff; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  font: 700 0.62rem/16px sans-serif; text-align: center;
 }
 @media (max-width: 500px) {
   /* Phones: icon plus a short word, so the header stays on one line at 390px. */
