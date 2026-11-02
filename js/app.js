@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -29,6 +29,7 @@ const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" ari
 
 const ui = { view: 'list', status: 'watching', kind: 'all', sort: 'updated', sortChosen: false, layout: 'list' };
 try { Object.assign(ui, JSON.parse(localStorage.getItem('cc.ui')), { kind: 'all' }); } catch {}
+if (ui.view === 'foryou') ui.view = 'explore'; // the old For you tab became Explore
 ui.layout = ui.layout === 'grid' ? 'grid' : 'list';
 ui.sortChosen = ui.sortChosen === true;
 let openId = null;
@@ -38,6 +39,11 @@ let lastResults = [];
 // "For you": sections of suggestions, plus a lookup of every suggestion we've fetched.
 let recs = { sig: null, loading: false, error: false, sections: [] };
 const recShows = new Map();
+// Explore: live AniList shelves, plus an optional "See all" grid on top of them.
+let explore = { loading: false, error: false, data: null };
+let leaveToList = false; // set while stepping back out of Explore to the shelf
+let browse = null; // { kind, genre, title, items, page, hasNext, loading, error, token }
+let exploreKind = 'all'; // all | anime | donghua; never saved, like the shelf's type filter
 let previewId = null;
 let editingTotal = false;
 
@@ -353,14 +359,7 @@ function renderAiring() {
   main.innerHTML = `<div class="air-head"><h2>Airing soon</h2><p class="dim">Next episodes of shows on your lists, in your time zone.</p></div>${body}`;
 }
 
-/* ---------- "For you" ---------- */
-
-const WHY = {
-  watching: "Because you're watching",
-  completed: 'Because you finished',
-  paused: "Because you're partway through",
-  planning: "Because it's on your list",
-};
+/* ---------- recommendations (shown on the Explore tab) ---------- */
 
 // The shows worth building suggestions from: what she's watching now first,
 // then what she finished, then the rest. Six is plenty and keeps the API happy.
@@ -380,7 +379,7 @@ async function loadRecs({ force = false } = {}) {
   if (!force && sig === recs.sig) return; // nothing changed since the last fetch
   const keep = sig === recs.sig ? recs.sections : [];
   recs = { sig, loading: true, error: false, sections: keep };
-  if (ui.view === 'foryou') renderForYou();
+  if (ui.view === 'explore' && !browse) renderExplore();
   try {
     if (force) clearRecommendationCache();
     const sections = sources.length ? await getRecommendations(sources) : [];
@@ -390,65 +389,165 @@ async function loadRecs({ force = false } = {}) {
     console.warn('recommendations failed', err);
     recs = { sig, loading: false, error: true, sections: keep };
   }
-  if (ui.view === 'foryou') renderForYou();
+  if (ui.view === 'explore' && !browse) renderExplore();
 }
 
 const cut = (s, n) => (s.length > n ? s.slice(0, s.lastIndexOf(' ', n)) + '…' : s);
 
-function recSection(s, i) {
-  return `<section class="rec" style="--i:${Math.min(i, 8)}">
-    <h3>${WHY[s.status] || 'Because you liked'} <b>${esc(s.title)}</b></h3>
-    <ul class="rec-row">${s.items.slice(0, 8).map((it, k) => `
-      <li style="--tint:${tintOf(it)};--i:${k}">
-        <button class="rec-tile" data-preview="${it.anilist_id}" aria-label="More about ${esc(it.title)}">
-          <span class="rec-cover">
-            <img src="${esc(it.cover_url)}" alt="" loading="lazy">
-            <span class="rec-plus" aria-hidden="true">+</span>
-          </span>
-          <span class="rec-name">${esc(it.title)}</span>
-          <span class="rec-meta">${isDonghua(it) ? 'Donghua' : 'Anime'}${it.year ? ` · ${it.year}` : ''}${it.total_eps ? ` · ${it.total_eps} ep` : ''}</span>
-        </button>
-      </li>`).join('')}
-    </ul>
-  </section>`;
+const SHELVES = [
+  ['season', 'Airing this season'],
+  ['trending', 'Trending now'],
+  ['donghua', 'Donghua spotlight'],
+  ['upcoming', 'Coming next season'],
+  ['top', 'All-time favourites'],
+];
+const typeOK = (it) => exploreKind === 'all' || (exploreKind === 'donghua') === isDonghua(it);
+
+function exploreTile(it, i, why = '') {
+  const have = store.findByAnilist(it.anilist_id);
+  const next = it.next && it.next.airingAt * 1000 > Date.now() ? it.next : null;
+  const score = it.community ? Math.round(it.community / 10) : 0;
+  return `<li style="--tint:${tintOf(it)};--i:${Math.min(i, 8)}">
+    <button class="rec-tile" data-preview="${it.anilist_id}" aria-label="More about ${esc(it.title)}${have ? ', on your list' : ''}">
+      <span class="rec-cover">
+        <img src="${esc(it.cover_url)}" alt="" loading="lazy">
+        ${have ? '<span class="rec-plus have" aria-hidden="true">✓</span>' : '<span class="rec-plus" aria-hidden="true">+</span>'}
+      </span>
+      <span class="rec-name">${esc(it.title)}</span>
+      <span class="rec-meta">${[isDonghua(it) ? 'Donghua' : '', it.year, next ? `ep ${next.episode} in ${countdown(next.airingAt)}` : it.total_eps ? `${it.total_eps} ep` : ''].filter(Boolean).join(' · ')}${score ? ` ${HEART}${score}` : ''}</span>
+      ${why ? `<span class="rec-why">${esc(why)}</span>` : ''}
+    </button>
+  </li>`;
 }
 
-function renderForYou() {
-  const head = `<div class="air-head rec-head">
-    <div><h2>For you</h2><p class="dim">Picked from what's on your shelf.</p></div>
-    <button class="icon-btn" data-rec-refresh aria-label="Find new suggestions">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
-    </button>
-  </div>`;
-
-  if (!store.all().length) {
-    main.innerHTML = `${head}<div class="empty">${mochi('alive')}
-      <p>Add a few shows to your shelf and this page will start suggesting more like them.</p>
-      <button class="pill" data-action="search">Find something to watch</button></div>`;
-    return;
+// Her own recommendations, flattened into one "Picked for you" shelf.
+function pickedForYou() {
+  const seen = new Set();
+  const out = [];
+  for (const sec of recs.sections) {
+    for (const it of sec.items) {
+      if (seen.has(it.anilist_id) || store.findByAnilist(it.anilist_id) || !typeOK(it)) continue;
+      seen.add(it.anilist_id);
+      out.push({ it, why: `Like ${sec.title}` });
+    }
   }
+  // Round-robin would mix sources better, but section order already puts what she's watching first.
+  return out.slice(0, 16);
+}
 
-  // Shows she already added shouldn't be suggested again.
-  const sections = recs.sections
-    .map((s) => ({ ...s, items: s.items.filter((it) => !store.findByAnilist(it.anilist_id)) }))
-    .filter((s) => s.items.length);
-
-  let body;
-  if (sections.length) body = sections.map(recSection).join('');
-  else if (recs.loading) body = `<div class="skel-for" aria-busy="true" aria-label="Finding shows you might like">${Array.from({ length: 2 }, (_, s) => `
+function shelfSkeleton(n = 2) {
+  return `<div class="skel-for" aria-busy="true" aria-label="Loading Explore">${Array.from({ length: n }, (_, s) => `
     <section class="rec skel-sec">
       <h3><span class="skel line skel-h" style="width:${s ? '138px' : '196px'}"></span></h3>
-      <ul class="rec-row">${Array.from({ length: s ? 4 : 6 }, (_, i) => `
+      <ul class="rec-row">${Array.from({ length: 5 }, (_, i) => `
         <li style="--i:${i}"><div class="skel-tile">
           <div class="skel cover tile"></div>
           <div class="skel line" style="width:${88 - i * 6}%"></div>
           <div class="skel line" style="width:${48 + (i % 3) * 8}%"></div>
         </div></li>`).join('')}</ul>
     </section>`).join('')}</div>`;
-  else if (recs.error) body = `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
-  else body = `<div class="empty">${mochi('alive')}<p>Add a couple more shows and suggestions will appear here.</p><button class="pill" data-action="search">Add a show</button></div>`;
+}
 
-  main.innerHTML = head + body;
+const exploreTypeSeg = () => `<div class="seg" role="group" aria-label="Show type">
+  ${[['all', 'All'], ['anime', 'Anime'], ['donghua', 'Donghua']].map(([k, l]) => `<button class="${k === exploreKind ? 'on' : ''}" aria-pressed="${k === exploreKind}" data-ex-kind="${k}">${l}</button>`).join('')}
+</div>`;
+
+const exploreFail = () => `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
+
+function renderExplore() {
+  const head = `<div class="air-head rec-head">
+    <div><h2>Explore</h2><p class="dim">Fresh from AniList, and picked from your shelf.</p></div>
+    <button class="icon-btn" data-rec-refresh aria-label="Refresh Explore">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+    </button>
+  </div>${exploreTypeSeg()}`;
+
+  const picks = pickedForYou();
+  let mine;
+  if (picks.length) mine = `<section class="rec"><h3>Picked for you</h3><ul class="rec-row">${picks.map((p, i) => exploreTile(p.it, i, p.why)).join('')}</ul></section>`;
+  else if (recs.loading) mine = shelfSkeleton(1);
+  else mine = `<section class="rec"><h3>Picked for you</h3><div class="empty slim">${mochi('alive')}<p>Add a few shows to your shelf and suggestions made for you will show up here.</p></div></section>`;
+
+  let rest;
+  if (explore.data) {
+    const sh = explore.data.shelves;
+    rest = SHELVES.map(([k, title]) => {
+      if (k === 'donghua' && exploreKind === 'anime') return '';
+      const items = sh[k].filter(typeOK);
+      if (!items.length) return '';
+      return `<section class="rec"><h3>${title}<button class="see-all" data-see-all="${k}" data-title="${esc(title)}">See all ›</button></h3>
+        <ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul></section>`;
+    }).join('') + `<section class="rec"><h3>Browse by genre</h3>
+      <div class="chips wrap">${explore.data.genres.map((g) => `<button class="chip" data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div></section>`;
+  } else if (explore.error) rest = exploreFail();
+  else rest = shelfSkeleton(2);
+
+  main.innerHTML = head + mine + rest;
+}
+
+/* ---------- "See all" grid ---------- */
+
+function openBrowse(kind, genre, title) {
+  browse = { kind, genre, title, items: [], page: 0, hasNext: true, loading: false, error: false, token: 0 };
+  history.pushState({ view: 'explore', sub: true }, ''); // Android back returns to Explore
+  render(true);
+  scrollTo(0, 0);
+  loadBrowse();
+}
+
+async function loadBrowse() {
+  const b = browse;
+  if (!b || b.loading || !b.hasNext) return;
+  b.loading = true;
+  b.error = false;
+  const token = ++b.token;
+  renderBrowse();
+  try {
+    const r = await getBrowse({ kind: b.kind, genre: b.genre, country: exploreKind === 'donghua' ? 'CN' : null, page: b.page + 1 });
+    if (browse !== b || token !== b.token) return; // closed, or the type filter changed meanwhile
+    for (const it of r.items) recShows.set(it.anilist_id, it);
+    const have = new Set(b.items.map((x) => x.anilist_id));
+    b.items.push(...r.items.filter((x) => !have.has(x.anilist_id)));
+    b.page++;
+    b.hasNext = r.hasNext;
+  } catch (err) {
+    if (browse !== b || token !== b.token) return;
+    console.warn('browse failed', err);
+    b.error = true;
+  }
+  b.loading = false;
+  renderBrowse();
+}
+
+function renderBrowse() {
+  const b = browse;
+  if (!b || ui.view !== 'explore') return;
+  const items = b.items.filter(typeOK);
+  const grid = items.length ? `<ul class="explore-grid">${items.map((it, i) => exploreTile(it, i)).join('')}</ul>` : '';
+  const loadingTiles = b.loading && !b.items.length
+    ? `<ul class="explore-grid" aria-busy="true">${Array.from({ length: 9 }, (_, i) => `<li><div class="skel-tile"><div class="skel cover tile"></div><div class="skel line" style="width:${80 - (i % 3) * 10}%"></div></div></li>`).join('')}</ul>` : '';
+  const tail = b.error
+    ? `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-browse-more>Try again</button></div>`
+    : !b.loading && !items.length ? `<div class="empty">${mochi()}<p>Nothing here yet.</p></div>`
+    : b.hasNext && !b.loading ? '<div class="more-row"><button class="pill soft" data-browse-more>Load more</button></div>' : '';
+  main.innerHTML = `<div class="air-head rec-head"><div>
+      <button class="link back-link" data-browse-back>‹ Explore</button><h2>${esc(b.title)}</h2></div></div>
+    ${exploreTypeSeg()}${grid}${loadingTiles}${tail}`;
+}
+
+async function loadExplore({ force = false } = {}) {
+  if (explore.loading || (!force && (explore.data || explore.error))) return;
+  explore = { ...explore, loading: true, error: false };
+  if (ui.view === 'explore' && !browse) renderExplore();
+  try {
+    const data = await getExplore({ force });
+    for (const list of Object.values(data.shelves)) for (const it of list) recShows.set(it.anilist_id, it);
+    explore = { loading: false, error: false, data };
+  } catch (err) {
+    console.warn('explore failed', err);
+    explore = { ...explore, loading: false, error: true };
+  }
+  if (ui.view === 'explore' && !browse) renderExplore();
 }
 
 /* ---------- preview sheet (a suggestion before adding it) ---------- */
@@ -464,6 +563,7 @@ function renderPreview() {
   if (!show) return;
   const have = store.findByAnilist(previewId);
   const score = show.community ? Math.round(show.community / 10) : 0;
+  const nextUp = show.next && show.next.airingAt * 1000 > Date.now() ? show.next : null;
   previewDlg.style.setProperty('--tint', tintOf(show));
   previewDlg.innerHTML = `<div class="sheet detail" style="--tint:${tintOf(show)}">
     <div class="grab" aria-hidden="true"></div>
@@ -474,6 +574,8 @@ function renderPreview() {
         <h2>${esc(show.title)}</h2>
         ${show.title_native ? `<p class="native">${esc(show.title_native)}</p>` : ''}
         <div class="meta">${badges(show)}${score ? `<span class="score">${HEART} ${score}</span>` : ''}</div>
+        ${show.genres?.length ? `<div class="r-tags">${show.genres.map((g) => `<span class="tag">${esc(g)}</span>`).join('')}</div>` : ''}
+        ${nextUp ? `<p class="next">${SPARK_SVG} ep ${nextUp.episode} in <b data-cd="${nextUp.airingAt}">${countdown(nextUp.airingAt)}</b></p>` : ''}
         <a class="al-link" href="https://anilist.co/anime/${show.anilist_id}" target="_blank" rel="noopener">View on AniList ↗</a>
       </div>
     </div>
@@ -527,7 +629,7 @@ function render(animate = false) {
   const scrollLeft = chips ? chips.scrollLeft : 0;
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
-  else if (ui.view === 'foryou') { renderForYou(); loadRecs(); }
+  else if (ui.view === 'explore') { if (browse) renderBrowse(); else renderExplore(); loadRecs(); loadExplore(); }
   else renderList();
   const newChips = $('.chips.scroll');
   if (newChips) newChips.scrollLeft = scrollLeft;
@@ -1120,18 +1222,42 @@ document.addEventListener('click', (ev) => {
   const d = t.dataset;
 
   if (d.view) {
-    if (d.view === ui.view) return;
+    if (d.view === ui.view) {
+      if (browse) history.back(); // tapping Explore again leaves the "See all" grid
+      return;
+    }
     if (d.view === 'list') {
-      if (history.state?.view) return history.back(); // popstate switches back
+      if (history.state?.view) {
+        leaveToList = Boolean(history.state.sub); // from a "See all" grid, step back past Explore too
+        return history.back(); // popstate switches back
+      }
     } else {
       history.pushState({ view: d.view }, '');
     }
+    browse = null;
     ui.view = d.view; saveUi(); render(true); scrollTo(0, 0);
   } else if (d.action === 'search') {
     openSearch();
   } else if ('recRefresh' in d) {
     toast('Looking for fresh picks ✿');
     loadRecs({ force: true });
+    loadExplore({ force: true });
+  } else if (d.exKind) {
+    if (d.exKind === exploreKind) return;
+    exploreKind = d.exKind;
+    if (browse) {
+      // The server filters donghua, so start the grid over for the new type.
+      Object.assign(browse, { items: [], page: 0, hasNext: true, loading: false, error: false });
+      render(); loadBrowse();
+    } else render();
+  } else if (d.seeAll) {
+    openBrowse(d.seeAll, null, d.title);
+  } else if (d.genre) {
+    openBrowse('genre', d.genre, d.genre);
+  } else if ('browseMore' in d) {
+    loadBrowse();
+  } else if ('browseBack' in d) {
+    history.back();
   } else if (d.preview) {
     openPreview(Number(d.preview));
   } else if (d.addrec) {
@@ -1280,8 +1406,16 @@ previewDlg.addEventListener('close', () => { previewId = null; });
 addEventListener('popstate', () => {
   const open = document.querySelector('dialog[open]:not(.closing)');
   if (open) return animateClose(open);
+  const leftBrowse = browse && !history.state?.sub;
+  if (leftBrowse) browse = null;
+  if (leaveToList) {
+    if (history.state?.view === ui.view) return history.back(); // still on an Explore entry: keep stepping back
+    leaveToList = false;
+  }
   if (ui.view !== 'list' && history.state?.view !== ui.view) {
     ui.view = 'list'; saveUi(); render(true); scrollTo(0, 0);
+  } else if (leftBrowse) {
+    render(true); scrollTo(0, 0);
   }
 });
 
@@ -1373,7 +1507,7 @@ function showApp(mode) {
   store.subscribe(() => {
     render();
     if (store.all().some((e) => !(e.anilist_id in airing) && !['completed', 'dropped'].includes(e.status))) loadAiring();
-    if (ui.view === 'foryou') loadRecs();
+    if (ui.view === 'explore') loadRecs();
   });
   if (ui.view !== 'list') history.pushState({ view: ui.view }, '');
   render(true);

@@ -154,8 +154,8 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
 
 That one command sets `versionCode`/`versionName` in `app/android/app/build.gradle` **and**
 `version.json`, copies the website into the app, builds the signed APK, puts it at
-`app/dist/CozyCorner.apk`, and then checks the APK itself: the bundled `index.html` and `js/app.js`
-must be byte-identical to the site, it must contain no `explore` code, and the version inside the
+`app/dist/CozyCorner.apk`, and then checks the APK itself: the bundled `index.html`, `js/app.js`
+and `js/anilist.js` must be byte-identical to the site, and the version inside the
 APK must match the arguments. It never pushes or publishes anything.
 
 ### Publishing an update

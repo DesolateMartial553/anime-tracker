@@ -22,8 +22,8 @@ One script, and it refuses to finish unless the APK is right:
    (this is the step that was skipped in v2.8, which is why that APK still shipped Explore);
 3. `./gradlew assembleRelease` (JDK 21; the script picks `/usr/lib/jvm/java-21-openjdk`);
 4. copies the signed APK to `app/dist/CozyCorner.apk`;
-5. verifies the APK itself: `assets/public/index.html` and `assets/public/js/app.js` must be
-   byte-identical to the site, the APK must contain no `explore`, and `aapt2 dump badging` must report
+5. verifies the APK itself: `assets/public/index.html`, `assets/public/js/app.js` and
+   `assets/public/js/anilist.js` must be byte-identical to the site, and `aapt2 dump badging` must report
    the requested versionCode/versionName. It prints the timestamp and sha256.
 
 It never pushes, tags or publishes. Publishing is manual, in this order:

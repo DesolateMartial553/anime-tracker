@@ -200,3 +200,81 @@ export function clearRecommendationCache() {
   try { localStorage.removeItem(REC_KEY); } catch {}
 }
 
+
+/* ---------- Explore ---------- */
+
+const EXPLORE_KEY = 'cc.explore.v1';
+const EXPLORE_TTL = 6 * 60 * 60 * 1000;
+const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
+
+// AniList counts December as the winter of the following year. `shift` steps whole seasons ahead.
+export function seasonOf(date = new Date(), shift = 0) {
+  const m = date.getMonth();
+  const idx = m === 11 ? 0 : Math.floor((m + 1) / 3);
+  const n = (date.getFullYear() + (m === 11 ? 1 : 0)) * 4 + idx + shift;
+  return { season: SEASONS[n % 4], year: Math.floor(n / 4) };
+}
+
+// Both queries were run against the live API before they were wired in (the old Explore died on a bad field).
+const SHOW_FIELDS = `fragment F on Media { id title { english romaji native } coverImage { large color } episodes format
+  seasonYear status countryOfOrigin averageScore genres description(asHtml: false) nextAiringEpisode { episode airingAt } }`;
+
+const EXPLORE = `query ($s: MediaSeason, $y: Int, $ns: MediaSeason, $ny: Int) {
+  trending: Page(perPage: 16) { media(type: ANIME, isAdult: false, sort: TRENDING_DESC) { ...F } }
+  season: Page(perPage: 16) { media(type: ANIME, isAdult: false, season: $s, seasonYear: $y, sort: POPULARITY_DESC) { ...F } }
+  upcoming: Page(perPage: 16) { media(type: ANIME, isAdult: false, season: $ns, seasonYear: $ny, sort: POPULARITY_DESC) { ...F } }
+  top: Page(perPage: 16) { media(type: ANIME, isAdult: false, sort: SCORE_DESC) { ...F } }
+  donghua: Page(perPage: 16) { media(type: ANIME, isAdult: false, countryOfOrigin: CN, sort: TRENDING_DESC) { ...F } }
+  GenreCollection
+}
+${SHOW_FIELDS}`;
+
+const BROWSE = `query ($page: Int, $sort: [MediaSort], $season: MediaSeason, $year: Int, $country: CountryCode, $genre: String) {
+  Page(page: $page, perPage: 30) {
+    pageInfo { hasNextPage }
+    media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $year, countryOfOrigin: $country, genre: $genre) { ...F }
+  }
+}
+${SHOW_FIELDS}`;
+
+const BROWSE_KINDS = {
+  trending: { sort: ['TRENDING_DESC'] },
+  season: { sort: ['POPULARITY_DESC'], shift: 0 },
+  upcoming: { sort: ['POPULARITY_DESC'], shift: 1 },
+  top: { sort: ['SCORE_DESC'] },
+  donghua: { sort: ['TRENDING_DESC'], country: 'CN' },
+  genre: { sort: ['POPULARITY_DESC'] },
+};
+
+const toExploreShow = (m) => ({ ...toShow(m), genres: (m.genres || []).slice(0, 4), next: m.nextAiringEpisode });
+const withCover = (list) => list.map(toExploreShow).filter((s) => s.cover_url);
+
+// { shelves: { trending, season, upcoming, top, donghua }, genres }, cached for 6 hours per season.
+export async function getExplore({ force = false } = {}) {
+  const cur = seasonOf();
+  const next = seasonOf(new Date(), 1);
+  const key = `${cur.season}${cur.year}`;
+  try {
+    const c = JSON.parse(localStorage.getItem(EXPLORE_KEY));
+    if (!force && c?.key === key && Date.now() - c.at < EXPLORE_TTL) return c.data;
+  } catch {}
+  const d = await gql(EXPLORE, { s: cur.season, y: cur.year, ns: next.season, ny: next.year });
+  const data = {
+    shelves: Object.fromEntries(['trending', 'season', 'upcoming', 'top', 'donghua'].map((k) => [k, withCover(d[k].media)])),
+    genres: d.GenreCollection.filter((g) => g !== 'Hentai'),
+  };
+  try { localStorage.setItem(EXPLORE_KEY, JSON.stringify({ at: Date.now(), key, data })); } catch {}
+  return data;
+}
+
+// One page of a "See all" grid.
+export async function getBrowse({ kind, genre = null, country = null, page = 1 }) {
+  const k = BROWSE_KINDS[kind] || BROWSE_KINDS.trending;
+  // AniList reads an explicit null filter as "match nothing", so unset filters must be left out entirely.
+  const vars = { page, sort: k.sort };
+  if (genre) vars.genre = genre;
+  if (country || k.country) vars.country = country || k.country;
+  if ('shift' in k) Object.assign(vars, seasonOf(new Date(), k.shift));
+  const d = await gql(BROWSE, vars);
+  return { items: withCover(d.Page.media), hasNext: d.Page.pageInfo.hasNextPage };
+}

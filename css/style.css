@@ -897,3 +897,24 @@ main.animate .skel-row {
 .total-row input { width: 88px; }
 .total-row .link { padding: 8px; }
 
+
+/* ---------- Explore ---------- */
+.rec h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.see-all { font: 700 0.8rem 'Nunito', sans-serif; color: var(--lav); padding: 4px 2px; }
+.rec-plus.have { background: var(--mint); box-shadow: 0 4px 10px rgba(60, 180, 140, 0.4); font-size: 16px; }
+.rec-why {
+  display: block; margin-top: 3px; font-size: 0.68rem; font-weight: 700; color: var(--pink-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rec-meta { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.air-head + .seg { margin: 4px 0 18px; }
+.explore-grid {
+  list-style: none; margin: 0 0 12px; padding: 0;
+  display: grid; gap: 14px 10px; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+@media (min-width: 820px) { .explore-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }
+.explore-grid .rec-tile { height: 100%; }
+.more-row { text-align: center; margin: 8px 0 24px; }
+.back-link { padding: 4px 0; margin-bottom: 2px; }
+.empty.slim { padding: 12px 8px 4px; }
+.empty.slim .mochi { width: 64px; }

@@ -7,7 +7,7 @@
 #   2. npm run sync            (copies the site into app/www, then into the Android assets)
 #   3. ./gradlew assembleRelease
 #   4. copies the signed APK to app/dist/CozyCorner.apk
-#   5. verifies the APK itself (byte-identical site files, no explore, right versionCode/Name)
+#   5. verifies the APK itself (byte-identical index.html, app.js and anilist.js, right versionCode/Name)
 #
 # It never pushes, tags or publishes anything. Publishing is a separate, manual step.
 set -euo pipefail
@@ -91,9 +91,9 @@ unzip -p "$DIST_APK" assets/public/js/app.js | cmp - js/app.js \
   || fail "APK's assets/public/js/app.js is not byte-identical to js/app.js"
 echo "ok  assets/public/js/app.js == js/app.js"
 
-EXPLORE_HITS=$(unzip -p "$DIST_APK" assets/public/index.html assets/public/js/app.js | grep -ci explore || true)
-[ "$EXPLORE_HITS" = "0" ] || fail "the APK still mentions 'explore' $EXPLORE_HITS time(s)"
-echo "ok  no 'explore' anywhere in the APK's html/js"
+unzip -p "$DIST_APK" assets/public/js/anilist.js | cmp - js/anilist.js \
+  || fail "APK's assets/public/js/anilist.js is not byte-identical to js/anilist.js"
+echo "ok  assets/public/js/anilist.js == js/anilist.js"
 
 AAPT2=""
 for bt in 36.0.0 35.0.0 34.0.0; do
