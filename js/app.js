@@ -495,7 +495,14 @@ function moodSection() {
   const seeAll = items.length
     ? `<button class="see-all" data-see-all="${moodKind(ui.mood)}" data-title="${esc(moodLabel(ui.mood))}">See all ›</button>`
     : '';
-  const row = moods.data ? (items.length ? `<ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul>` : '') : moodRowSkeleton();
+  // A mood can have nothing of the chosen type: say so rather than showing an empty row.
+  const kindWord = exploreKind === 'donghua' ? 'donghua' : exploreKind === 'anime' ? 'anime' : 'picks';
+  const nothing = kindWord === 'picks'
+    ? 'No picks for this mood yet — try another one ✿'
+    : `No ${kindWord} picks for this mood yet — try another one ✿`;
+  const row = moods.data
+    ? (items.length ? `<ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul>` : `<div class="empty slim"><p>${esc(nothing)}</p></div>`)
+    : moodRowSkeleton();
   return `<section class="rec mood-sec"><h3>What's the mood?${seeAll}</h3>${moodChips()}${row}</section>`;
 }
 
