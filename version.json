@@ -1,6 +1,6 @@
 {
-  "versionCode": 21,
-  "versionName": "2.8.1",
+  "versionCode": 22,
+  "versionName": "2.9.0",
   "apk": "https://github.com/DesolateMartial553/anime-tracker/releases/latest/download/CozyCorner.apk",
-  "notes": "v2.8.1: rebuilt from the live site, release pipeline added."
+  "notes": "Cozy Corner 2.9: new Explore, live sync between phone and laptop, and the app now always matches the website. After updating, sign in once with your usual email."
 }
