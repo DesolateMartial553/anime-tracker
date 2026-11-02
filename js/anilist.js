@@ -240,7 +240,7 @@ const BROWSE = `query ($page: Int, $sort: [MediaSort], $season: MediaSeason, $ye
 }
 ${SHOW_FIELDS}`;
 
-const BROWSE_KINDS = {
+export const BROWSE_KINDS = {
   trending: { sort: ['TRENDING_DESC'] },
   season: { sort: ['POPULARITY_DESC'], shift: 0 },
   upcoming: { sort: ['POPULARITY_DESC'], shift: 1 },
@@ -278,17 +278,38 @@ export async function getExplore({ force = false } = {}) {
   return data;
 }
 
-// One page of a "See all" grid.
-export async function getBrowse({ kind, genre = null, country = null, page = 1 }) {
+// The Format pill's choices, mapped onto AniList's own arguments. "All" sends no format,
+// so the kind keeps whatever it already filters on (Movie night stays movies).
+const BROWSE_FORMATS = {
+  tv: { format_in: ['TV', 'TV_SHORT'] },
+  movie: { format: 'MOVIE' },
+  ona: { format: 'ONA' },
+};
+
+// One page of a "See all" grid. `sort`, `format` and `year` are the user's picks and
+// replace the kind's own value for that field only; unset picks are left out entirely.
+export async function getBrowse({ kind, genre = null, country = null, page = 1, sort = null, format = null, year = null }) {
   const k = BROWSE_KINDS[kind] || BROWSE_KINDS.trending;
   // AniList reads an explicit null filter as "match nothing", so unset filters must be left out entirely.
-  const vars = { page, sort: k.sort };
+  const vars = { page, sort: sort ? [sort] : k.sort };
   if (genre || k.genre) vars.genre = genre || k.genre;
   if (country || k.country) vars.country = country || k.country;
-  for (const f of ['tag_in', 'format', 'format_in', 'averageScore_greater', 'popularity_lesser']) {
+  for (const f of ['tag_in', 'averageScore_greater', 'popularity_lesser']) {
     if (f in k) vars[f] = k[f];
   }
+  // Format: user pick wins; '' = "All" means omit the kind's own format too.
+  const fmtPick = format && BROWSE_FORMATS[format];
+  if (fmtPick && fmtPick.format) vars.format = fmtPick.format;
+  if (fmtPick && fmtPick.format_in) vars.format_in = fmtPick.format_in;
+  // When user did NOT pick All, keep the kind's fixed format (Movie night, Gems).
+  if (!format && k.format) vars.format = k.format;
+  if (!format && k.format_in) vars.format_in = k.format_in;
   if ('shift' in k) Object.assign(vars, seasonOf(new Date(), k.shift));
+  // A year pick wins over a kind's own season/year (the two kinds that fix one hide the Year pill).
+  if (year) {
+    delete vars.season;
+    vars.year = year;
+  }
   const d = await gql(BROWSE, vars);
   return { items: withCover(d.Page.media), hasNext: d.Page.pageInfo.hasNextPage };
 }

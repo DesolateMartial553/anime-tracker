@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getWeek, getDetails, getMoods } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getWeek, getDetails, getMoods, BROWSE_KINDS } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -523,6 +523,7 @@ const exploreTypeSeg = () => `<div class="seg" role="group" aria-label="Show typ
 const exploreFail = () => `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
 
 // One row: the title, the All/Anime/Donghua switch and refresh. The subtitle went to make room.
+// The search pill sits on its own line under that row, so the header still fits one line at 390px.
 const exploreHead = () => `<div class="ex-top">
   <h2 class="ex-title">Explore</h2>
   <div class="ex-tools">${exploreTypeSeg()}
@@ -530,7 +531,8 @@ const exploreHead = () => `<div class="ex-top">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
     </button>
   </div>
-</div>`;
+</div>
+<button class="pill soft ex-search" data-action="search"><span aria-hidden="true">🔍</span> Search anime &amp; donghua</button>`;
 
 // Genres: one sideways-scrolling row of small pills, right under the header.
 function genreStrip() {
@@ -701,8 +703,20 @@ function renderExplore() {
 
 /* ---------- "See all" grid ---------- */
 
+// The grid's three filter pills. Values are the API's own sort keys / our format keys;
+// the labels stay short so all three fit on one line on a phone.
+const BROWSE_SORTS = [
+  ['POPULARITY_DESC', 'Popular'],
+  ['SCORE_DESC', 'Top rated'],
+  ['START_DATE_DESC', 'Newest'],
+  ['TRENDING_DESC', 'Trending'],
+];
+const BROWSE_FORMAT_PILLS = [['', 'All'], ['tv', 'TV'], ['movie', 'Movie'], ['ona', 'ONA']];
+const browseKind = (kind) => BROWSE_KINDS[kind] || BROWSE_KINDS.trending;
+const browseDefaults = () => ({ sort: null, format: null, year: null });
+
 function openBrowse(kind, genre, title) {
-  browse = { kind, genre, title, items: [], page: 0, hasNext: true, loading: false, error: false, token: 0 };
+  browse = { kind, genre, title, items: [], page: 0, hasNext: true, loading: false, error: false, token: 0, filters: browseDefaults() };
   history.pushState({ view: 'explore', sub: true }, ''); // Android back returns to Explore
   render(true);
   scrollTo(0, 0);
@@ -717,8 +731,12 @@ async function loadBrowse() {
   const token = ++b.token;
   renderBrowse();
   try {
-    const r = await getBrowse({ kind: b.kind, genre: b.genre, country: exploreKind === 'donghua' ? 'CN' : null, page: b.page + 1 });
-    if (browse !== b || token !== b.token) return; // closed, or the type filter changed meanwhile
+    const f = b.filters || browseDefaults();
+    const r = await getBrowse({
+      kind: b.kind, genre: b.genre, country: exploreKind === 'donghua' ? 'CN' : null,
+      page: b.page + 1, sort: f.sort, format: f.format, year: f.year,
+    });
+    if (browse !== b || token !== b.token) return; // closed, or a filter/type changed meanwhile
     for (const it of r.items) recShows.set(it.anilist_id, it);
     const have = new Set(b.items.map((x) => x.anilist_id));
     b.items.push(...r.items.filter((x) => !have.has(x.anilist_id)));
@@ -733,9 +751,61 @@ async function loadBrowse() {
   renderBrowse();
 }
 
+// Restarts the grid from page 1 with the new pick. The token bump drops any page still in flight.
+function applyBrowseFilter(field, value) {
+  const b = browse;
+  if (!b || b.kind === 'week') return;
+  b.filters = b.filters || browseDefaults();
+  if (field === 'sort') b.filters.sort = value === browseKind(b.kind).sort[0] ? null : value;
+  else if (field === 'year') b.filters.year = value ? Number(value) : null;
+  else b.filters.format = value || null;
+  Object.assign(b, { items: [], page: 0, hasNext: true, loading: false, error: false, token: b.token + 1 });
+  scrollTo(0, 0);
+  loadBrowse(); // renders the fresh grid itself
+}
+
+// The three pills under the type switch. Kinds that already fix a season/year (This season,
+// Upcoming) hide the Year one. A pick only overrides its own field, never the others.
+function browseFilters(b) {
+  const k = browseKind(b.kind);
+  const f = b.filters || browseDefaults();
+  const sortNow = f.sort || k.sort[0];
+  const yearNow = f.year ? String(f.year) : '';
+  const years = [['', 'Any year']];
+  const nowYear = new Date().getFullYear();
+  for (let i = 0; i < 12; i++) years.push([String(nowYear - i), String(nowYear - i)]);
+  const opts = (list, cur) => list.map(([v, label]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`).join('');
+  return `<div class="browse-filters" role="group" aria-label="Filter this list">
+    <select class="browse-sel" data-browse-filter="sort" aria-label="Sort by">${opts(BROWSE_SORTS, sortNow)}</select>
+    <select class="browse-sel" data-browse-filter="format" aria-label="Format">${opts(BROWSE_FORMAT_PILLS, f.format || '')}</select>
+    ${'shift' in k ? '' : `<select class="browse-sel" data-browse-filter="year" aria-label="Year">${opts(years, yearNow)}</select>`}
+  </div>`;
+}
+
+// One observer at a time: every re-render and every view change replaces or drops it,
+// so no observer is left pointing at a grid that isn't on screen.
+let browseObserver = null;
+
+function stopBrowseObserver() {
+  if (!browseObserver) return;
+  browseObserver.disconnect();
+  browseObserver = null;
+}
+
+function watchBrowseSentinel(b) {
+  stopBrowseObserver();
+  const sentinel = $('.browse-sentinel', main);
+  if (!sentinel || !b.hasNext || b.error || b.loading || typeof IntersectionObserver !== 'function') return;
+  browseObserver = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) loadBrowse();
+  }, { rootMargin: '600px 0px' });
+  browseObserver.observe(sentinel);
+}
+
 function renderBrowse() {
   const b = browse;
-  if (!b || ui.view !== 'explore') return;
+  if (!b || b.kind === 'week' || ui.view !== 'explore') return stopBrowseObserver();
+  stopBrowseObserver();
   const items = b.items.filter(typeOK);
   const grid = items.length ? `<ul class="explore-grid">${items.map((it, i) => exploreTile(it, i)).join('')}</ul>` : '';
   const loadingTiles = b.loading && !b.items.length
@@ -743,10 +813,12 @@ function renderBrowse() {
   const tail = b.error
     ? `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-browse-more>Try again</button></div>`
     : !b.loading && !items.length ? `<div class="empty">${mochi()}<p>Nothing here yet.</p></div>`
+    : b.loading && b.items.length ? '<div class="more-row"><span class="dim">Loading more…</span></div>'
     : b.hasNext && !b.loading ? '<div class="more-row"><button class="pill soft" data-browse-more>Load more</button></div>' : '';
   main.innerHTML = `<div class="air-head rec-head"><div>
       <button class="link back-link" data-browse-back>‹ Explore</button><h2>${esc(b.title)}</h2></div></div>
-    ${exploreTypeSeg()}${grid}${loadingTiles}${tail}`;
+    ${exploreTypeSeg()}${browseFilters(b)}${grid}${loadingTiles}${tail}${items.length ? '<div class="browse-sentinel" aria-hidden="true"></div>' : ''}`;
+  watchBrowseSentinel(b);
 }
 
 /* ---------- "This week" schedule (uses the browse slot, so back works the same) ---------- */
@@ -1067,6 +1139,7 @@ function placeInd(sel, key) {
   indPos[key] = to;
 }
 function render(animate = false) {
+  stopBrowseObserver(); // renderBrowse puts it back if a "See all" grid is still on screen
   // Strips are remembered by their label, so a sideways row in one view can't shove another view's row along.
   const strips = [...main.querySelectorAll('.chips.scroll')].map((c) => [c.getAttribute('aria-label') || '', c.scrollLeft]);
   main.classList.remove('animate');
@@ -1797,8 +1870,8 @@ document.addEventListener('click', (ev) => {
     if (browse?.kind === 'week') {
       render(); // the week is already in memory: just re-filter the tabs and rows
     } else if (browse) {
-      // The server filters donghua, so start the grid over for the new type.
-      Object.assign(browse, { items: [], page: 0, hasNext: true, loading: false, error: false });
+      // The server filters donghua, so start the grid over for the new type (the token drops any page in flight).
+      Object.assign(browse, { items: [], page: 0, hasNext: true, loading: false, error: false, token: browse.token + 1 });
       render(); loadBrowse();
     } else render();
   } else if (d.seeAll) {
@@ -1946,6 +2019,8 @@ document.addEventListener('click', (ev) => {
 
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'dProg') setProgress(openId, parseInt(ev.target.value, 10));
+  // Sort / Format / Year pills in a "See all" grid. Not a button, so it isn't in the click handler.
+  if (ev.target.dataset.browseFilter) applyBrowseFilter(ev.target.dataset.browseFilter, ev.target.value);
 });
 
 document.addEventListener('input', (ev) => {
