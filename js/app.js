@@ -14,6 +14,9 @@ const FORMAT_LABEL = { TV: 'TV', TV_SHORT: 'Short', MOVIE: 'Movie', SPECIAL: 'Sp
 // U+FE0E asks for the plain text heart; without it Android draws a red emoji heart that ignores CSS colour.
 const HEART = '♥\uFE0E';
 const HEART_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 5.3 3.2 1.7-2 3.2-3.2 5.3-3.2 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>';
+// Little inline icons (same stroke style as the nav icons via the global svg rule).
+const PLAY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5.5v13l11-6.5z"/></svg>';
+const SPARK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c.7 4.6 2 6.2 8.5 8.5-6.5 2.3-7.8 3.9-8.5 8.5-.7-4.6-2-6.2-8.5-8.5 6.5-2.3 7.8-3.9 8.5-8.5z"/></svg>';
 const SUGGESTIONS = ['Frieren', 'Link Click', 'Mo Dao Zu Shi', 'Spy x Family'];
 const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" aria-hidden="true">
   <path d="M24 44 L30 12 L52 32 Z" class="m-body m-ear m-ear-l"/>
@@ -24,8 +27,10 @@ const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" ari
   <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
 </svg>`;
 
-const ui = { view: 'list', status: 'watching', kind: 'all', sort: 'updated' };
+const ui = { view: 'list', status: 'watching', kind: 'all', sort: 'updated', sortChosen: false, layout: 'list' };
 try { Object.assign(ui, JSON.parse(localStorage.getItem('cc.ui')), { kind: 'all' }); } catch {}
+ui.layout = ui.layout === 'grid' ? 'grid' : 'list';
+ui.sortChosen = ui.sortChosen === true;
 let openId = null;
 let airing = {};
 let airingLoaded = false;
@@ -42,6 +47,8 @@ const searchDlg = $('#searchDlg');
 const detailDlg = $('#detailDlg');
 const settingsDlg = $('#settingsDlg');
 const previewDlg = $('#previewDlg');
+const filterDlg = $('#filterDlg');
+let filterText = ''; // live shelf filter; never saved (per P2 brief)
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // The Anime/Donghua filter isn't remembered, so a forgotten filter never hides half her shelf.
 const saveUi = () => { try { localStorage.setItem('cc.ui', JSON.stringify({ ...ui, kind: 'all' })); } catch {} };
@@ -64,6 +71,14 @@ const nextOf = (e) => {
   return n && n.airingAt * 1000 > Date.now() ? n : null;
 };
 
+function behindOf(e) {
+  const a = airing[e.anilist_id];
+  if (!a) return 0;
+  if (a.next) return Math.max(0, a.next.episode - 1 - (e.progress || 0));
+  if (a.status === 'FINISHED' && totalOf(e) !== null) return Math.max(0, totalOf(e) - (e.progress || 0));
+  return 0;
+}
+
 function countdown(airingAt) {
   const ms = airingAt * 1000 - Date.now();
   if (ms <= 0) return 'now';
@@ -81,42 +96,52 @@ function badges(e) {
 
 /* ---------- list view ---------- */
 
-function shelfStats(list) {
-  let eps = 0, rated = 0, sum = 0, airingNext = 0;
+// "Your stats" section at the top of the Settings sheet (P2 task 5).
+// Genres are only counted when the data exists on entries — it doesn't yet, so this stays hidden.
+function statsSection() {
+  const list = store.all();
+  if (!list.length) return '';
+  let eps = 0, rated = 0, sum = 0, anime = 0, donghua = 0;
+  const per = Object.fromEntries(STATUSES.map(([k]) => [k, 0]));
+  const genres = new Map();
   for (const e of list) {
+    if (per[e.status] !== undefined) per[e.status]++;
     eps += e.progress || 0;
     if (e.score) { rated++; sum += e.score; }
-    if (nextOf(e)) airingNext++;
+    if (isDonghua(e)) donghua++; else anime++;
+    const g = e.genres || e.genre;
+    if (Array.isArray(g) && g.length) for (const name of g) genres.set(name, (genres.get(name) || 0) + 1);
   }
-  return {
-    shows: list.length,
-    eps,
-    avg: rated ? `${(sum / rated).toFixed(1)} / 10` : '—',
-    airingNext,
-  };
-}
-
-function statsStrip(s) {
-  if (!s.shows) return '';
-  const tiles = [
-    [HEART, 'Shows', s.shows],
-    ['▶', 'Episodes', s.eps],
-    ['✿', 'Avg rating', s.avg],
-    ['✦', 'Airing next', s.airingNext],
-  ];
-  return `<div class="stats" aria-label="Shelf stats">${tiles.map(([ico, label, val], i) =>
-    `<div class="stat" style="--tint:var(--c${i % 3})">
-       <span class="stat-ico" aria-hidden="true">${ico}</span>
-       <div><small>${label}</small><b>${esc(String(val))}</b></div>
-     </div>`).join('')}</div>`;
+  const hours = Math.round((eps * 24) / 60); // episodes × ~24 min
+  const topGenres = [...genres.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const split = list.length ? Math.round((donghua / list.length) * 100) : 0;
+  const bar = list.length
+    ? `<div class="split-bar" role="img" aria-label="Anime ${100 - split}% · Donghua ${split}%">
+        <i style="width:${100 - split}%"></i>
+      </div>
+      <p class="split-note dim small"><span class="b-an">Anime ${100 - split}%</span> <span class="b-dh">Donghua ${split}%</span></p>`
+    : '';
+  return `<section class="d-sec"><h3>Your stats</h3>
+    <dl class="stats-dl">
+      ${STATUSES.map(([k, l]) => `<div><dt>${l}</dt><dd>${per[k]}</dd></div>`).join('')}
+      <div><dt>Episodes watched</dt><dd>${eps}</dd></div>
+      <div><dt>Time watched</dt><dd>about ${hours} h</dd></div>
+      <div><dt>Average rating</dt><dd>${rated ? `${(sum / rated).toFixed(1)} / 10` : '—'}</dd></div>
+    </dl>
+    ${bar}
+    ${topGenres.length ? `<dl class="stats-dl"><div><dt>Top genres</dt><dd>${topGenres.map(([g]) => esc(g)).join(' · ')}</dd></div></dl>` : ''}
+  </section>`;
 }
 
 function card(e, i) {
   const total = totalOf(e);
   const next = nextOf(e);
+  const behind = behindOf(e);
+  const newPill = (behind > 0 && e.status === 'watching') ? `<span class="new-pill" aria-label="${behind} new episodes">${behind} new</span>` : '';
   return `<article class="card" data-id="${e.id}" style="--tint:${tintOf(e)};--i:${Math.min(i, 10)}">
     <button class="cover-btn" data-open="${e.id}" aria-label="Open ${esc(e.title)}">
       <img class="sticker" src="${esc(e.cover_url)}" alt="" loading="lazy">
+      ${newPill}
     </button>
     <div class="card-body">
       <button class="title" data-open="${e.id}">${esc(e.title)}</button>
@@ -125,7 +150,7 @@ function card(e, i) {
         <div class="bar${total ? '' : ' unknown'}"><i style="width:${pctOf(e)}%"></i></div>
         <span>ep <b class="ep">${e.progress}</b> / ${total ?? '?'}</span>
       </div>
-      ${next ? `<p class="next">✦ ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
+      ${next ? `<p class="next">${SPARK_SVG} ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
     </div>
     ${e.status !== 'completed' ? `<button class="plus1" data-plus="${e.id}" aria-label="Watched an episode of ${esc(e.title)}">+1</button>` : ''}
   </article>`;
@@ -140,6 +165,9 @@ const EMPTY = {
 };
 
 function emptyState() {
+  if (store.all().length && (filterText.trim() || ui.kind !== 'all')) {
+    return `<div class="empty">${mochi()}<p>Nothing on this list matches your filter.</p><button class="pill" data-clear-filter>Clear filter</button></div>`;
+  }
   const fresh = !store.all().length;
   const [msg, cta] = fresh
     ? ['Welcome to your cozy corner ✿ Search any anime or donghua to start your shelf.', 'Add your first show']
@@ -171,38 +199,110 @@ function updateCard() {
   </div>`;
 }
 
+function continueWatching() {
+  const allWatching = store.all().filter((e) => e.status === 'watching');
+  if (allWatching.length < 2) return '';
+  const picks = allWatching
+    .filter((e) => behindOf(e) > 0 || (e.updated_at && Date.now() - new Date(e.updated_at).getTime() < 7 * 86400000))
+    .sort((a, b) => { const ba = behindOf(a), bb = behindOf(b); if (ba !== bb) return bb - ba; return b.updated_at.localeCompare(a.updated_at); })
+    .slice(0, 8);
+  if (!picks.length) return '';
+  return `<section class="continue-row" aria-label="Continue watching">
+    <h3>Continue watching <span class="dim">(${picks.length})</span></h3>
+    <ul class="rec-row scroll" role="list">
+      ${picks.map((e) => {
+        const n = nextOf(e), behind = behindOf(e);
+        return `<li style="--tint:${tintOf(e)}">
+          <button class="rec-tile" data-open="${e.id}" aria-label="Open ${esc(e.title)}" style="--tint:${tintOf(e)}">
+            <span class="rec-cover"><img src="${esc(e.cover_url)}" alt=""></span>
+            <span class="rec-name">${esc(e.title)}</span>
+            <span class="rec-meta${behind > 0 ? ' hot' : ''}">${behind > 0 ? `${behind} new` : n ? `ep ${n.episode} next` : 'Continue'}</span>
+          </button>
+          <button class="plus1" data-plus="${e.id}" aria-label="Watched an episode of ${esc(e.title)}">+1</button>
+        </li>`;
+      }).join('')}
+    </ul>
+  </section>`;
+}
+
+
+// Grid card: poster tiles with cover 2:3, title 2 lines max,
+// thin progress bar, the "N new" pill, score heart if rated.
+function gridCard(e, i) {
+  const behind = behindOf(e);
+  const newPill = (behind > 0 && e.status === 'watching') ? `<span class="new-pill" aria-label="${behind} new episodes">${behind} new</span>` : '';
+  const rated = e.score ? `<span class="score">${HEART} ${e.score}</span>` : '';
+  return `<article class="card grid" data-id="${e.id}" style="--tint:${tintOf(e)};--i:${Math.min(i, 10)}">
+    <button class="cover-btn" data-open="${e.id}" aria-label="Open ${esc(e.title)}">
+      <img class="sticker" src="${esc(e.cover_url)}" alt="" loading="lazy">
+      ${newPill}
+    </button>
+    <div class="card-body grid">
+      <button class="title" data-open="${e.id}">${esc(e.title)}</button>
+      <div class="meta">${badges(e)}${rated}</div>
+      <div class="prog"><div class="bar${totalOf(e) ? '' : ' unknown'}"><i style="width:${pctOf(e)}%"></i></div></div>
+    </div>
+  </article>`;
+}
+
 function renderList() {
   const list = store.all();
-  const count = (k) => list.filter((e) => e.status === k).length;
+  const text = filterText.trim().toLowerCase();
+  const count = (k) => {
+    let c = list.filter((e) => e.status === k);
+    if (ui.kind === 'anime') c = c.filter((e) => !isDonghua(e));
+    if (ui.kind === 'donghua') c = c.filter(isDonghua);
+    if (text) c = c.filter((e) => (e.title + ' ' + (e.title_native || '')).toLowerCase().includes(text));
+    return c.length;
+  };
   let items = list.filter((e) => e.status === ui.status);  if (ui.kind === 'anime') items = items.filter((e) => !isDonghua(e));
   if (ui.kind === 'donghua') items = items.filter(isDonghua);
+  if (text) items = items.filter((e) => (e.title + ' ' + (e.title_native || '')).toLowerCase().includes(text));
   const sorters = {
     updated: (a, b) => b.updated_at.localeCompare(a.updated_at),
     title: (a, b) => a.title.localeCompare(b.title),
     score: (a, b) => b.score - a.score || a.title.localeCompare(b.title),
+    next: (a, b) => {
+      const ba = behindOf(a), bb = behindOf(b);
+      if (ba !== bb) return bb - ba; // new episodes first
+      return b.updated_at.localeCompare(a.updated_at); // then by updated desc
+    },
+    progress: (a, b) => b.progress - a.progress || a.title.localeCompare(b.title),
+    created: (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
   };
-  items.sort(sorters[ui.sort] || sorters.updated);
+  // Default order on Watching: new episodes first, then most recently updated.
+  // An explicitly chosen sort (P2 filter sheet) always wins.
+  items.sort(ui.sortChosen ? (sorters[ui.sort] || sorters.updated)
+    : (ui.status === 'watching' ? sorters.next : sorters.updated));
 
-  const opt = (v, l) => `<option value="${v}"${v === ui.sort ? ' selected' : ''}>${l}</option>`;
   main.innerHTML = `
     ${updateCard()}
-    <div class="chips scroll" role="tablist" aria-label="Lists">
-      <span class="ind" aria-hidden="true"></span>
-      ${STATUSES.map(([k, l]) => `<button class="chip${k === ui.status ? ' on' : ''}" role="tab" aria-selected="${k === ui.status}" data-status-tab="${k}">${l}<span class="count">${count(k)}</span></button>`).join('')}
-    </div>
-    <div class="tools">
-      <div class="seg" role="group" aria-label="Show type">
+    <div class="chips-row">
+      <div class="chips scroll" role="tablist" aria-label="Lists">
         <span class="ind" aria-hidden="true"></span>
-        ${[['all', 'All'], ['anime', 'Anime'], ['donghua', 'Donghua']].map(([k, l]) => `<button class="${k === ui.kind ? 'on' : ''}" aria-pressed="${k === ui.kind}" data-kind="${k}">${l}</button>`).join('')}
+        ${STATUSES.map(([k, l]) => `<button class="chip${k === ui.status ? ' on' : ''}" role="tab" aria-selected="${k === ui.status}" data-status-tab="${k}">${l}<span class="count">${count(k)}</span></button>`).join('')}
       </div>
-      <select id="sortSel" aria-label="Sort by">
-        ${opt('updated', 'Recent')}${opt('title', 'Title A–Z')}${opt('score', 'Rating')}
-      </select>
+      <button class="icon-btn filter-btn${(filterText.trim() || ui.kind !== 'all') ? ' active' : ''}" id="filterBtn" aria-label="Filter, sort and layout">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      </button>
     </div>
-    ${items.length ? `<div class="cards">${items.map(card).join('')}</div>` : emptyState()}
-    ${statsStrip(shelfStats(list))}
+    ${(filterText.trim() || ui.kind !== 'all') ? `<div class="filter-chip" aria-label="Active filter">${ui.kind !== 'all' ? ui.kind.charAt(0).toUpperCase() + ui.kind.slice(1) + (filterText.trim() ? ' · ' : '') : ''}${filterText.trim() ? `'${esc(filterText.trim())}'` : ''}<button data-clear-filter aria-label="Clear filter">×</button></div>` : ''}
+    ${ui.status === 'watching' ? continueWatching() : ''}
+    ${items.length ? `<div class="cards${ui.layout === 'grid' ? ' grid' : ''}">${items.map(ui.layout === 'grid' ? gridCard : card).join('')}</div>` : emptyState()}
     ${appPromo()}
     ${store.cloudEnabled ? (store.pendingCount() > 0 ? `<p class="local-note">${store.pendingCount()} change${store.pendingCount() === 1 ? '' : 's'} waiting to sync</p>` : '') : '<p class="local-note">Saved on this device only.</p>'}`;
+}
+
+/* ---------- filter sheet ---------- */
+
+// Mirror ui / filterText into the static filter dialog's controls.
+function syncFilterSheet() {
+  const on = (btn, on) => { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', String(on)); };
+  filterDlg.querySelectorAll('[data-filter-kind]').forEach((b) => on(b, b.dataset.filterKind === ui.kind));
+  filterDlg.querySelectorAll('[data-filter-sort]').forEach((b) => on(b, b.dataset.filterSort === ui.sort));
+  filterDlg.querySelectorAll('[data-filter-layout]').forEach((b) => on(b, b.dataset.filterLayout === ui.layout));
+  const box = $('#filterText');
+  if (box && box.value !== filterText) box.value = filterText;
 }
 
 /* ---------- airing view ---------- */
@@ -380,7 +480,7 @@ function renderPreview() {
     ${show.description ? `<p class="d-desc">${esc(cut(show.description, 330))}</p>` : ''}
     <div class="preview-actions">${have
       ? `<button class="pill ghost" data-open="${have.id}">On ${esc(STATUS_LABEL[have.status])} ✓</button>`
-      : `<button class="pill" data-addrec="watching">▶ Watching</button>
+      : `<button class="pill" data-addrec="watching">${PLAY_SVG} Watching</button>
          <button class="pill soft" data-addrec="planning">+ Plan to watch</button>`}
     </div>
   </div>`;
@@ -437,7 +537,6 @@ function render(animate = false) {
   }
   if (ui.view === 'list') {
     placeInd('.chips.scroll', 'status');
-    placeInd('.seg', 'kind');
   }
   document.querySelectorAll('.nav-btn[data-view]').forEach((b) => {
     if (b.dataset.view === ui.view) b.setAttribute('aria-current', 'page');
@@ -763,7 +862,7 @@ function renderResults(state) {
           <div class="meta">${badges(r)}${eps ? `<span class="dim">${eps}</span>` : ''}</div>
           <div class="r-actions">${have
             ? `<button class="pill ghost" data-open="${have.id}">On ${esc(STATUS_LABEL[have.status])} ✓</button>`
-            : `<button class="pill" data-add="${i}" data-as="watching">▶ Watching</button>
+            : `<button class="pill" data-add="${i}" data-as="watching">${PLAY_SVG} Watching</button>
                <button class="pill soft" data-add="${i}" data-as="planning">+ Plan to watch</button>`}
           </div>
         </div>
@@ -848,7 +947,7 @@ function renderDetail() {
         <h2>${esc(e.title)}</h2>
         ${e.title_native ? `<p class="native">${esc(e.title_native)}</p>` : ''}
         <div class="meta">${badges(e)}</div>
-        ${next ? `<p class="next">✦ ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
+        ${next ? `<p class="next">${SPARK_SVG} ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
         <a class="al-link" href="https://anilist.co/anime/${e.anilist_id}" target="_blank" rel="noopener">View on AniList ↗</a>
       </div>
     </div>
@@ -897,6 +996,7 @@ function flushNotes() {
 function renderSettings() {
   const count = store.all().length;
   $('#settingsBody').innerHTML = `
+    ${statsSection()}
     <h2>Your shelf</h2>
     <p class="dim">${count} show${count === 1 ? '' : 's'} saved${store.cloudEnabled ? '' : ' on this device'}.</p>
     <section class="d-sec"><h3>Back up</h3>
@@ -1105,8 +1205,29 @@ document.addEventListener('click', (ev) => {
       if (msg) msg.textContent = u ? `Version ${u.versionName} is ready: tap Update on your shelf ✿` : "You're on the newest version ✿";
     });
   } else if (t.id === 'settingsBtn') {
+    syncFilterSheet();
     renderSettings();
     openSheet(settingsDlg);
+  } else if (t.id === 'filterBtn') {
+    syncFilterSheet();
+    openSheet(filterDlg);
+  } else if (t.dataset.filterKind) {
+    if (t.dataset.filterKind === ui.kind) return;
+    ui.kind = t.dataset.filterKind; saveUi(); render(true); syncFilterSheet();
+  } else if (t.dataset.filterSort) {
+    if (t.dataset.filterSort === ui.sort && ui.sortChosen) return;
+    ui.sort = t.dataset.filterSort; ui.sortChosen = true; saveUi(); render(true); syncFilterSheet();
+  } else if (t.dataset.filterLayout) {
+    if (t.dataset.filterLayout === ui.layout) return;
+    ui.layout = t.dataset.filterLayout; saveUi(); render(true); syncFilterSheet();
+  } else if (t.id === 'filterReset') {
+    ui.kind = 'all'; ui.sort = 'updated'; ui.sortChosen = false; ui.layout = 'list';
+    filterText = ''; $('#filterText').value = '';
+    saveUi(); render(true); syncFilterSheet();
+  } else if ('clearFilter' in d) {
+    filterText = ''; ui.kind = 'all';
+    saveUi(); render(true);
+    toast('Filter cleared ✿');
   } else if ('hidePromo' in d) {
     try { localStorage.setItem('cc.appPromo', 'hidden'); } catch {}
     t.closest('.app-promo').remove();
@@ -1121,12 +1242,15 @@ document.addEventListener('click', (ev) => {
 });
 
 document.addEventListener('change', (ev) => {
-  if (ev.target.id === 'sortSel') { ui.sort = ev.target.value; saveUi(); render(true); }
   if (ev.target.id === 'dProg') setProgress(openId, parseInt(ev.target.value, 10));
 });
 
 document.addEventListener('input', (ev) => {
   if (ev.target.id === 'q') onSearchInput();
+  if (ev.target.id === 'filterText') {
+    filterText = ev.target.value;
+    render(); // no entrance animation: it would replay on every keystroke
+  }
   if (ev.target.id === 'dNotes') {
     $('#savedLbl').textContent = '';
     clearTimeout(notesTimer);
@@ -1146,7 +1270,7 @@ document.addEventListener('animationend', (ev) => {
   ev.target.classList?.remove('squish', 'flip', 'pop', 'ripple', 'spin');
 });
 
-for (const dlg of [searchDlg, detailDlg, settingsDlg, previewDlg]) {
+for (const dlg of [searchDlg, detailDlg, settingsDlg, previewDlg, filterDlg]) {
   dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); closeSheet(dlg); }); // Esc key
   enableSwipe(dlg);
 }

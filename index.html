@@ -63,7 +63,7 @@
       </nav>
 
       <div class="top-actions">
-        <button class="icon-btn" id="settingsBtn" aria-label="Backup, restore and app info">
+        <button class="icon-btn" id="settingsBtn" aria-label="Stats, backup and app info">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         </button>
         <button class="icon-btn" id="themeBtn" aria-label="Switch light or dark theme">
@@ -120,6 +120,41 @@
 
   <dialog id="detailDlg" class="sheet-dlg" aria-label="Show details"></dialog>
   <dialog id="previewDlg" class="sheet-dlg" aria-label="Suggested show"></dialog>
+  <dialog id="filterDlg" class="sheet-dlg" aria-label="Filter, sort and layout">
+    <div class="sheet detail" style="--tint:var(--pink)">
+      <div class="grab" aria-hidden="true"></div>
+      <button class="icon-btn close" data-close aria-label="Close">×</button>
+      <h2>Your shelf, your way</h2>
+      <section class="d-sec"><h3>Find on my shelf</h3>
+        <input id="filterText" class="text-in" type="search" placeholder="Title or native name…" aria-label="Find on my shelf" autocomplete="off">
+      </section>
+      <section class="d-sec"><h3>Type</h3>
+        <div class="seg" role="group" aria-label="Type">
+          <button class="on" data-filter-kind="all" aria-pressed="true">All</button>
+          <button data-filter-kind="anime" aria-pressed="false">Anime</button>
+          <button data-filter-kind="donghua" aria-pressed="false">Donghua</button>
+        </div>
+      </section>
+      <section class="d-sec"><h3>Sort by</h3>
+        <div class="chips wrap" role="group" aria-label="Sort by">
+          <button class="chip on" data-filter-sort="updated" aria-pressed="true">Recent</button>
+          <button class="chip" data-filter-sort="title" aria-pressed="false">Title A–Z</button>
+          <button class="chip" data-filter-sort="score" aria-pressed="false">Rating</button>
+          <button class="chip" data-filter-sort="next" aria-pressed="false">New episodes</button>
+          <button class="chip" data-filter-sort="progress" aria-pressed="false">Progress</button>
+          <button class="chip" data-filter-sort="created" aria-pressed="false">Date added</button>
+        </div>
+      </section>
+      <section class="d-sec"><h3>Layout</h3>
+        <div class="seg" role="group" aria-label="Layout">
+          <button class="on" data-filter-layout="list" aria-pressed="true">List</button>
+          <button data-filter-layout="grid" aria-pressed="false">Grid</button>
+        </div>
+      </section>
+      <button class="link" id="filterReset">Reset all</button>
+    </div>
+  </dialog>
+
   <dialog id="settingsDlg" class="sheet-dlg" aria-label="Backup and app info">
     <div class="sheet detail">
       <div class="grab" aria-hidden="true"></div>
