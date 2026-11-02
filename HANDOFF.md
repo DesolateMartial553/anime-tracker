@@ -81,6 +81,16 @@ versionName 2.8.1. Only the tag's commit is wrong; nothing downloads from the ta
   the offline queue against the real Supabase project (tested with a mocked client).
 - To ship: squash/keep the four local commits, push, then `release.sh <name> <code>` and the usual `gh release`.
 
+## Explore v2 + live sync (2026-11-02, local commits, not pushed)
+- **EX2-1..4** (OpenCode, audited by Claude in Chrome): genre strip + compact header, hero spotlight, quick add with
+  Undo, mood shelves / Hidden gems / Movie night, "This week" schedule (also linked from an empty Airing tab),
+  See-all Sort/Format/Year filters + infinite scroll, search pill on Explore.
+- **SYNC-1** live sync via Supabase Realtime (needs `alter publication supabase_realtime add table public.entries;`
+  run once in the SQL editor), sync pill, "Signed in as" line, backups under Advanced. Timestamps are compared as
+  times (`ts()` in store.js) because Postgres/PostgREST/browser formats differ.
+- **SYNC-3** nightly snapshot repo prepared at `~/Work-Projects/cozy-corner-backups` (private repo + 2 secrets still
+  to be set up by the owner).
+
 ## Not finished
 - **Couple sharing — decided 2026-11-01: finish it later, not now.**
   Today: `couple.html` is a static stub (no JavaScript, no sign-in), `js/store.js` has
