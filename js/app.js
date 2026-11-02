@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getDetails } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -41,6 +41,10 @@ let recs = { sig: null, loading: false, error: false, sections: [] };
 const recShows = new Map();
 // Explore: live AniList shelves, plus an optional "See all" grid on top of them.
 let explore = { loading: false, error: false, data: null };
+// Per-show extras (synopsis, links, sequels) fetched when a sheet opens.
+const details = new Map();
+const detailsPending = new Set();
+let descOpen = false;
 let leaveToList = false; // set while stepping back out of Explore to the shelf
 let browse = null; // { kind, genre, title, items, page, hasNext, loading, error, token }
 let exploreKind = 'all'; // all | anime | donghua; never saved, like the shelf's type filter
@@ -403,12 +407,13 @@ const SHELVES = [
 ];
 const typeOK = (it) => exploreKind === 'all' || (exploreKind === 'donghua') === isDonghua(it);
 
-function exploreTile(it, i, why = '') {
+function exploreTile(it, i, why = '', owned = false) {
   const have = store.findByAnilist(it.anilist_id);
+  const open = owned && have ? `data-open="${have.id}"` : `data-preview="${it.anilist_id}"`;
   const next = it.next && it.next.airingAt * 1000 > Date.now() ? it.next : null;
   const score = it.community ? Math.round(it.community / 10) : 0;
   return `<li style="--tint:${tintOf(it)};--i:${Math.min(i, 8)}">
-    <button class="rec-tile" data-preview="${it.anilist_id}" aria-label="More about ${esc(it.title)}${have ? ', on your list' : ''}">
+    <button class="rec-tile" ${open} aria-label="More about ${esc(it.title)}${have ? ', on your list' : ''}">
       <span class="rec-cover">
         <img src="${esc(it.cover_url)}" alt="" loading="lazy">
         ${have ? '<span class="rec-plus have" aria-hidden="true">✓</span>' : '<span class="rec-plus" aria-hidden="true">+</span>'}
@@ -535,6 +540,75 @@ function renderBrowse() {
     ${exploreTypeSeg()}${grid}${loadingTiles}${tail}`;
 }
 
+/* ---------- show details (detail + preview sheets) ---------- */
+
+const REL_LABEL = { SEQUEL: 'Sequel', PREQUEL: 'Prequel', SIDE_STORY: 'Side story', SPIN_OFF: 'Spin-off', ALTERNATIVE: 'Alternative' };
+
+function ensureDetails(aid) {
+  if (details.has(aid) || detailsPending.has(aid)) return;
+  detailsPending.add(aid);
+  getDetails(aid)
+    .then((d) => {
+      details.set(aid, d);
+      for (const r of d.relations) if (!recShows.has(r.anilist_id)) recShows.set(r.anilist_id, r);
+    })
+    .catch((err) => console.warn('details failed', err))
+    .finally(() => {
+      detailsPending.delete(aid);
+      if (openId && store.get(openId)?.anilist_id === aid) renderDetail();
+      if (previewId === aid) renderPreview();
+    });
+}
+
+// Genre + studio tags under the title. Falls back to the genres the search already gave us.
+function detailsTop(aid, fallback = []) {
+  const d = details.get(aid);
+  const genres = d?.genres?.length ? d.genres : fallback;
+  if (!genres.length && !d?.studio) return '';
+  return `<div class="r-tags d-tags">${genres.map((g) => `<span class="tag">${esc(g)}</span>`).join('')}${d?.studio ? `<span class="tag studio">${esc(d.studio)}</span>` : ''}</div>`;
+}
+
+function detailsBottom(aid, { desc = true, related = true } = {}) {
+  const d = details.get(aid);
+  if (!d) {
+    return detailsPending.has(aid)
+      ? `<div class="d-skel" aria-busy="true" aria-label="Loading details"><div class="skel line" style="width:92%"></div><div class="skel line" style="width:78%"></div><div class="skel line" style="width:60%"></div></div>`
+      : '';
+  }
+  const out = [];
+  if (desc && d.description) {
+    out.push(`<section class="d-sec"><h3>Story</h3><p class="d-desc${descOpen ? '' : ' clamp'}">${esc(d.description)}</p>
+      ${d.description.length > 220 ? `<button class="link more-btn" data-toggle-desc>${descOpen ? 'Less' : 'More'}</button>` : ''}</section>`);
+  }
+  if (d.links.length || d.trailerUrl) {
+    out.push(`<section class="d-sec"><h3>Where to watch</h3><div class="chips wrap">
+      ${d.links.map((l) => `<a class="pill soft watch-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.site)} ↗</a>`).join('')}
+      ${d.trailerUrl ? `<a class="pill ghost watch-link" href="${esc(d.trailerUrl)}" target="_blank" rel="noopener">Trailer ↗</a>` : ''}
+    </div></section>`);
+  }
+  if (related && d.relations.length) {
+    out.push(`<section class="d-sec"><h3>Related</h3><ul class="rec-row">${d.relations.map((r, i) => exploreTile(r, i, REL_LABEL[r.relationType], true)).join('')}</ul></section>`);
+  }
+  return out.join('');
+}
+
+// After finishing a show: if AniList knows a sequel she hasn't added, offer it.
+async function offerSequel(e) {
+  const aid = e.anilist_id;
+  ensureDetails(aid);
+  for (let i = 0; i < 40 && !details.has(aid) && detailsPending.has(aid); i++) await new Promise((r) => setTimeout(r, 150));
+  const seq = details.get(aid)?.relations.find((r) => r.relationType === 'SEQUEL' && !store.findByAnilist(r.anilist_id));
+  if (!seq) return;
+  await new Promise((r) => setTimeout(r, 1800)); // let the "finished" toast and sparkles land first
+  toast(`Next up: ${seq.title}`, {
+    label: 'Add to Plan',
+    fn: async () => {
+      if (store.findByAnilist(seq.anilist_id)) return;
+      if (await safe(store.add(seq, 'planning'))) toast('Added to Plan to watch ✿');
+    },
+  });
+}
+
 async function loadExplore({ force = false } = {}) {
   if (explore.loading || (!force && (explore.data || explore.error))) return;
   explore = { ...explore, loading: true, error: false };
@@ -554,6 +628,8 @@ async function loadExplore({ force = false } = {}) {
 
 function openPreview(aid) {
   previewId = aid;
+  descOpen = false;
+  ensureDetails(aid);
   renderPreview();
   openSheet(previewDlg);
 }
@@ -574,12 +650,13 @@ function renderPreview() {
         <h2>${esc(show.title)}</h2>
         ${show.title_native ? `<p class="native">${esc(show.title_native)}</p>` : ''}
         <div class="meta">${badges(show)}${score ? `<span class="score">${HEART} ${score}</span>` : ''}</div>
-        ${show.genres?.length ? `<div class="r-tags">${show.genres.map((g) => `<span class="tag">${esc(g)}</span>`).join('')}</div>` : ''}
+        ${detailsTop(show.anilist_id, show.genres || [])}
         ${nextUp ? `<p class="next">${SPARK_SVG} ep ${nextUp.episode} in <b data-cd="${nextUp.airingAt}">${countdown(nextUp.airingAt)}</b></p>` : ''}
         <a class="al-link" href="https://anilist.co/anime/${show.anilist_id}" target="_blank" rel="noopener">View on AniList ↗</a>
       </div>
     </div>
     ${show.description ? `<p class="d-desc">${esc(cut(show.description, 330))}</p>` : ''}
+    ${detailsBottom(show.anilist_id, { desc: false, related: false })}
     <div class="preview-actions">${have
       ? `<button class="pill ghost" data-open="${have.id}">On ${esc(STATUS_LABEL[have.status])} ✓</button>`
       : `<button class="pill" data-addrec="watching">${PLAY_SVG} Watching</button>
@@ -733,6 +810,7 @@ async function setStatus(id, status) {
   if (status === 'completed') {
     celebrate();
     toast(`${e.title} is finished!`, null, true);
+    offerSequel(e);
   } else {
     toast(`Moved to ${STATUS_LABEL[status]}`, { label: 'Undo', fn: () => change(id, { status: prevStatus, progress: prevProgress }) });
   }
@@ -826,6 +904,10 @@ function ambient() {
 }
 
 /* ---------- sheets (search + detail) ---------- */
+
+// A Related tile can open the preview sheet on top of the detail sheet, so "the open dialog" isn't always one.
+// previewDlg comes after detailDlg in the markup, which is also its stacking order.
+const topDialog = () => [...document.querySelectorAll('dialog[open]:not(.closing)')].at(-1);
 
 // Each open sheet gets a history entry, so Android's back gesture closes it.
 function openSheet(dlg) {
@@ -1013,6 +1095,9 @@ async function addFromSearch(i, status, rect) {
 function openDetail(id) {
   openId = id;
   editingTotal = false;
+  descOpen = false;
+  const aid = store.get(id)?.anilist_id;
+  if (aid) ensureDetails(aid); // before the first render, so the loading skeleton shows
   renderDetail();
   if (searchDlg.open) {
     // Swap sheets in place so a single back press still closes the detail sheet.
@@ -1022,7 +1107,7 @@ function openDetail(id) {
   } else if (previewDlg.open) {
     animateClose(previewDlg);
     if (history.state?.sheet === 'previewDlg') history.replaceState({ sheet: 'detailDlg' }, '');
-    detailDlg.showModal();
+    if (!detailDlg.open) detailDlg.showModal(); // already open when we came from a Related tile
   } else {
     openSheet(detailDlg);
   }
@@ -1050,6 +1135,7 @@ function renderDetail() {
         ${e.title_native ? `<p class="native">${esc(e.title_native)}</p>` : ''}
         <div class="meta">${badges(e)}</div>
         ${next ? `<p class="next">${SPARK_SVG} ep ${next.episode} in <b data-cd="${next.airingAt}">${countdown(next.airingAt)}</b></p>` : ''}
+        ${detailsTop(e.anilist_id)}
         <a class="al-link" href="https://anilist.co/anime/${e.anilist_id}" target="_blank" rel="noopener">View on AniList ↗</a>
       </div>
     </div>
@@ -1077,6 +1163,7 @@ function renderDetail() {
     <section class="d-sec"><h3>Notes <span class="dim" id="savedLbl"></span></h3>
       <textarea id="dNotes" rows="3" placeholder="Favourite character, where you stopped, who recommended it…">${esc(draft ?? e.notes)}</textarea>
     </section>
+    ${detailsBottom(e.anilist_id)}
     <button class="remove" data-remove>Remove from list</button>
   </div>`;
 }
@@ -1171,7 +1258,7 @@ const toastEl = $('#toast');
 let toastTimer;
 function toast(msg, action, withMochi = false) {
   // Lives inside an open modal dialog so its button stays clickable.
-  (document.querySelector('dialog[open]:not(.closing)') || document.body).appendChild(toastEl);
+  (topDialog() || document.body).appendChild(toastEl);
   toastEl.classList.remove('show');
   toastEl.innerHTML = `${withMochi ? mochi('wiggle') : ''}<span>${esc(msg)}</span>${action ? `<button class="toast-btn">${esc(action.label)}</button>` : ''}`;
   if (action) toastEl.querySelector('button').onclick = () => { toastEl.classList.remove('show'); action.fn(); };
@@ -1256,6 +1343,9 @@ document.addEventListener('click', (ev) => {
     openBrowse('genre', d.genre, d.genre);
   } else if ('browseMore' in d) {
     loadBrowse();
+  } else if ('toggleDesc' in d) {
+    descOpen = !descOpen;
+    if (openId) renderDetail(); else renderPreview();
   } else if ('browseBack' in d) {
     history.back();
   } else if (d.preview) {
@@ -1404,7 +1494,7 @@ detailDlg.addEventListener('close', () => { flushNotes(); openId = null; editing
 previewDlg.addEventListener('close', () => { previewId = null; });
 
 addEventListener('popstate', () => {
-  const open = document.querySelector('dialog[open]:not(.closing)');
+  const open = topDialog();
   if (open) return animateClose(open);
   const leftBrowse = browse && !history.state?.sub;
   if (leftBrowse) browse = null;

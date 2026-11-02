@@ -918,3 +918,17 @@ main.animate .skel-row {
 .back-link { padding: 4px 0; margin-bottom: 2px; }
 .empty.slim { padding: 12px 8px 4px; }
 .empty.slim .mochi { width: 64px; }
+
+/* ---------- show details ---------- */
+.r-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 2px; }
+.tag {
+  padding: 1px 9px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+  background: color-mix(in srgb, var(--tint, var(--lav)) 16%, transparent);
+  border: 1px solid var(--glass-line); color: var(--muted);
+}
+.tag.studio { background: var(--lav-soft); color: var(--lav); border-color: transparent; }
+.d-desc.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.more-btn { padding: 4px 0; }
+.d-skel { display: grid; gap: 8px; margin-top: 18px; }
+.watch-link { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; text-decoration: none; }
+.detail .rec-row { margin: 0 -4px; padding: 4px 4px 8px; }

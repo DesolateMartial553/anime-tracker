@@ -59,6 +59,22 @@ versionName 2.8.1. Only the tag's commit is wrong; nothing downloads from the ta
 3. **One build path.** The README's copy-paste build instructions (which wrote to `download/`) are
    replaced by `app/scripts/release.sh`.
 
+## Unreleased work after v2.8.1 (local commits, not pushed, no APK built)
+- **P1** cleanup: dead code and the `couple.html` stub removed; search swipe is right-only (→ Plan to watch);
+  Undo on `+1` / status toasts; an offline write queue in `js/store.js` (`cc.queue.<user>`, replayed on
+  reconnect; rejected items are dropped so they can't block the queue; adds replay as upserts).
+- **P2** shelf redesign: "N new" pills (`behindOf`), Continue watching strip, one Filter button + sheet
+  (find, type, six sorts, list/grid), 3-column poster grid, stats moved into Settings, SVG icons.
+- **Explore** (replaces "For you"): one aliased AniList query (`getExplore`, cached 6 h) plus paged "See all"
+  grids (`getBrowse`). Rule learned the hard way: **never send `null` filter variables to AniList** — an explicit
+  null means "match nothing". `release.sh` now checks `anilist.js` byte-identity instead of banning the word.
+- **P3** richer detail/preview sheets: `getDetails` (synopsis, genres, studio, streaming links, trailer, related;
+  cached 7 days), and a "Next up: <sequel> — Add to Plan" toast when a show is completed.
+- Nested sheets (Related tile → preview over detail) close one at a time: see `topDialog()` in `js/app.js`.
+- Verified in Chrome at 390 px and 1280 px (light + dark), live AniList, zero console errors. Not yet verified:
+  the offline queue against the real Supabase project (tested with a mocked client).
+- To ship: squash/keep the four local commits, push, then `release.sh <name> <code>` and the usual `gh release`.
+
 ## Not finished
 - **Couple sharing — decided 2026-11-01: finish it later, not now.**
   Today: `couple.html` is a static stub (no JavaScript, no sign-in), `js/store.js` has

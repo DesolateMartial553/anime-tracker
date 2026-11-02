@@ -278,3 +278,51 @@ export async function getBrowse({ kind, genre = null, country = null, page = 1 }
   const d = await gql(BROWSE, vars);
   return { items: withCover(d.Page.media), hasNext: d.Page.pageInfo.hasNextPage };
 }
+
+/* ---------- show details ---------- */
+
+const DETAILS_KEY = 'cc.details.v1';
+const DETAILS_TTL = 7 * 24 * 60 * 60 * 1000;
+const DETAILS_MAX = 150;
+
+// Tested against the live API (Frieren, Spy x Family) before use.
+const DETAILS = `query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    description(asHtml: false) genres studios(isMain: true) { nodes { name } }
+    externalLinks { site url type }
+    relations { edges { relationType node { id type title { english romaji native } coverImage { large color }
+      episodes format seasonYear status countryOfOrigin averageScore } } }
+    trailer { id site }
+  }
+}`;
+
+const RELATION_ORDER = ['SEQUEL', 'PREQUEL', 'SIDE_STORY', 'SPIN_OFF', 'ALTERNATIVE'];
+const TRAILER_URL = { youtube: (id) => `https://www.youtube.com/watch?v=${id}`, dailymotion: (id) => `https://www.dailymotion.com/video/${id}` };
+
+// Synopsis, genres, studio, streaming links, trailer and related anime (sequels first). Cached for a week.
+export async function getDetails(id) {
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(DETAILS_KEY)) || {}; } catch {}
+  const hit = cache[id];
+  if (hit && Date.now() - hit.at < DETAILS_TTL) return hit.d;
+
+  const m = (await gql(DETAILS, { id })).Media;
+  const d = {
+    description: plain(m.description),
+    genres: m.genres || [],
+    studio: m.studios?.nodes?.[0]?.name || '',
+    links: (m.externalLinks || []).filter((l) => l.type === 'STREAMING').slice(0, 6).map((l) => ({ site: l.site, url: l.url })),
+    trailerUrl: m.trailer && TRAILER_URL[m.trailer.site]?.(m.trailer.id) || '',
+    relations: (m.relations?.edges || [])
+      .filter((e) => e.node.type === 'ANIME' && RELATION_ORDER.includes(e.relationType))
+      .sort((a, b) => RELATION_ORDER.indexOf(a.relationType) - RELATION_ORDER.indexOf(b.relationType))
+      .map((e) => ({ ...toExploreShow(e.node), relationType: e.relationType }))
+      .filter((s) => s.cover_url)
+      .slice(0, 8),
+  };
+  cache[id] = { at: Date.now(), d };
+  // Keep the newest entries only, so this can't grow without bound.
+  const keep = Object.entries(cache).sort((a, b) => b[1].at - a[1].at).slice(0, DETAILS_MAX);
+  try { localStorage.setItem(DETAILS_KEY, JSON.stringify(Object.fromEntries(keep))); } catch {}
+  return d;
+}
