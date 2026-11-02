@@ -293,6 +293,56 @@ export async function getBrowse({ kind, genre = null, country = null, page = 1 }
   return { items: withCover(d.Page.media), hasNext: d.Page.pageInfo.hasNextPage };
 }
 
+/* ---------- this week's schedule ---------- */
+
+const WEEK_KEY = 'cc.week.v1';
+const WEEK_TTL = 60 * 60 * 1000;
+const WEEK_PAGES = 8; // the whole week is three pages today; eight is a safe ceiling
+
+// Run against the live API first: 200 OK, 50 episodes a page, hasNextPage true on pages 1-2 and false on page 3.
+const WEEK = `query ($page: Int, $from: Int, $to: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) {
+      airingAt episode media { ...F isAdult }
+    }
+  }
+}
+${SHOW_FIELDS}`;
+
+// Every episode airing in the next 7 days as [{ airingAt, episode, show }], earliest first.
+// Adult shows and shows without a cover are dropped, and the same episode is never listed twice.
+// Cached for an hour, since the window moves and nobody wants three pages of requests per tab switch.
+export async function getWeek({ force = false } = {}) {
+  if (!force) {
+    try {
+      const c = JSON.parse(localStorage.getItem(WEEK_KEY));
+      if (c?.items?.length && Date.now() - c.at < WEEK_TTL) return c.items;
+    } catch {}
+  }
+  const from = Math.floor(Date.now() / 1000);
+  const to = from + 7 * 24 * 60 * 60;
+  const seen = new Set();
+  const items = [];
+  for (let page = 1; page <= WEEK_PAGES; page++) {
+    const d = await gql(WEEK, { page, from, to });
+    const rows = d?.Page?.airingSchedules || [];
+    for (const s of rows) {
+      const m = s?.media;
+      if (!m || m.isAdult || !m.coverImage?.large) continue;
+      const show = toExploreShow(m);
+      const key = `${show.anilist_id}:${s.episode}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ airingAt: s.airingAt, episode: s.episode, show });
+    }
+    if (!d?.Page?.pageInfo?.hasNextPage) break;
+  }
+  items.sort((a, b) => a.airingAt - b.airingAt);
+  try { localStorage.setItem(WEEK_KEY, JSON.stringify({ at: Date.now(), items })); } catch {}
+  return items;
+}
+
 /* ---------- Moods, hidden gems, movie night ---------- */
 
 const MOODS_KEY = 'cc.moods.v1';

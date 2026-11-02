@@ -770,7 +770,7 @@ dialog .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
 
 /* cards pop in one after another when switching tabs */
 main.animate .card, main.animate .day li, main.animate .empty, main.animate .air-head,
-main.animate .skel-row {
+main.animate .week-card, main.animate .skel-row {
   animation: popIn 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) backwards;
   animation-delay: calc(var(--i, 0) * 45ms);
 }
@@ -1079,6 +1079,27 @@ main.animate .skel-row {
 .back-link { padding: 4px 0; margin-bottom: 2px; }
 .empty.slim { padding: 12px 8px 4px; }
 .empty.slim .mochi { width: 64px; }
+
+/* "This week": the slim card under the Explore hero, then its day tabs and episode rows */
+.week-card {
+  display: grid; gap: 3px; width: 100%; text-align: left; margin: 0 0 22px;
+  padding: 14px 18px; border-radius: var(--radius);
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--pink) 16%, transparent) 0%, transparent 62%),
+    var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 8px 20px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+  backdrop-filter: blur(14px) saturate(1.35);
+  -webkit-backdrop-filter: blur(14px) saturate(1.35);
+  transition: transform 0.12s;
+}
+.week-card:active { transform: scale(0.98); }
+.wc-title { font: 600 1rem 'Fredoka', sans-serif; color: var(--ink); }
+.wc-hint { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.week-days { margin-bottom: 14px; }
+.week-row { position: relative; }
+.week-row .air-row { padding-right: 50px; }
+.week-row .rec-plus { top: 50%; right: 10px; margin-top: -15px; }
 
 /* ---------- show details ---------- */
 .r-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 2px; }

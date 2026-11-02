@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getDetails, getMoods } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getWeek, getDetails, getMoods } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -363,7 +363,8 @@ function renderAiring() {
           </div>
         </div>`).join('')}</div>`
     : !groups.length
-      ? `<div class="empty">${mochi('alive')}<p>No airing shows on your lists right now. Currently-airing shows you add will appear here with a countdown.</p></div>`
+      ? `<div class="empty">${mochi('alive')}<p>No airing shows on your lists right now. Currently-airing shows you add will appear here with a countdown.</p>
+          <button class="pill soft" data-week-jump>See everything airing this week</button></div>`
       : groups.map((g) => `<section class="day"><h3>${g.label}</h3><ul>
           ${g.items.map(({ e, n, time }) => `<li style="--i:${Math.min(i++, 10)}"><button class="air-row" data-open="${e.id}" style="--tint:${tintOf(e)}">
             <span class="time">${time}</span>
@@ -693,7 +694,7 @@ function renderExplore() {
   } else if (explore.error) rest = exploreFail();
   else rest = shelfSkeleton(2);
 
-  main.innerHTML = exploreHead() + genreStrip() + heroSection() + mine + moodSection() + rest;
+  main.innerHTML = exploreHead() + genreStrip() + heroSection() + weekCard() + mine + moodSection() + rest;
   wireHero();
   syncHeroTimer();
 }
@@ -746,6 +747,124 @@ function renderBrowse() {
   main.innerHTML = `<div class="air-head rec-head"><div>
       <button class="link back-link" data-browse-back>‹ Explore</button><h2>${esc(b.title)}</h2></div></div>
     ${exploreTypeSeg()}${grid}${loadingTiles}${tail}`;
+}
+
+/* ---------- "This week" schedule (uses the browse slot, so back works the same) ---------- */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const startOfToday = () => new Date().setHours(0, 0, 0, 0);
+
+// Seven day tabs, today first, then "Tomorrow", then short weekday + date (e.g. "Thu 6").
+function weekDays() {
+  const t0 = startOfToday();
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(t0);
+    d.setDate(d.getDate() + i);
+    const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow'
+      : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`;
+    return { i, label };
+  });
+}
+
+// Which tab an episode belongs to, 0-6. Midnight-to-midnight rather than ms/86400000, so DST weeks stay right.
+function weekDayOf(airingAt) {
+  const d = new Date(airingAt * 1000);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - startOfToday()) / DAY_MS);
+}
+
+const weekCard = () => `<button class="week-card" data-week-open>
+  <span class="wc-title">📅 This week's schedule ›</span>
+  <span class="wc-hint">Everything airing in the next 7 days</span>
+</button>`;
+
+function openWeek() {
+  // The same slot and history entry as a "See all" grid: Android back and "‹ Explore" both return to Explore.
+  browse = { kind: 'week', title: 'This week', items: [], loading: false, error: false, token: 0, day: 0 };
+  history.pushState({ view: 'explore', sub: true }, '');
+  render(true);
+  scrollTo(0, 0);
+  loadWeek();
+}
+
+async function loadWeek({ force = false } = {}) {
+  const b = browse;
+  if (!b || b.kind !== 'week') return;
+  b.loading = true;
+  b.error = false;
+  const token = ++b.token;
+  renderWeek();
+  try {
+    const items = await getWeek({ force });
+    if (browse !== b || token !== b.token) return; // closed, or reopened meanwhile
+    for (const it of items) recShows.set(it.show.anilist_id, it.show);
+    b.items = items;
+  } catch (err) {
+    if (browse !== b || token !== b.token) return;
+    console.warn('week failed', err);
+    b.error = true;
+  }
+  b.loading = false;
+  renderWeek();
+}
+
+// One episode, in the Airing tab's row shape, but tapping it opens the preview sheet.
+function weekRow(it, i) {
+  const show = it.show;
+  const have = store.findByAnilist(show.anilist_id);
+  const time = new Date(it.airingAt * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `<li class="week-row" style="--tint:${tintOf(show)};--i:${Math.min(i, 10)}">
+    <button class="air-row" data-preview="${show.anilist_id}" aria-label="More about ${esc(show.title)}${have ? ', on your list' : ''}, episode ${it.episode}, ${esc(time)}">
+      <span class="time">${esc(time)}</span>
+      <img class="sticker sm" src="${esc(show.cover_url)}" alt="" loading="lazy">
+      <span class="air-title">${esc(show.title)}<small>ep ${it.episode}${have ? ` · ${esc(STATUS_LABEL[have.status])}` : ''}</small></span>
+    </button>
+    ${quickAddBtn(show, have)}
+  </li>`;
+}
+
+function renderWeek() {
+  const b = browse;
+  if (!b || b.kind !== 'week' || ui.view !== 'explore') return;
+  const days = weekDays();
+  // The query runs to "now + 7 days", which can reach a few hours into an eighth calendar day
+  // (today only counts from now, not from midnight). Those nowhere-to-show entries are left out.
+  const items = b.items.filter((it) => {
+    const day = weekDayOf(it.airingAt);
+    return day >= 0 && day < days.length && typeOK(it.show);
+  });
+  if (!(b.day >= 0 && b.day < days.length)) b.day = 0;
+  const perDay = days.map((d) => items.filter((it) => weekDayOf(it.airingAt) === d.i));
+  const tabs = `<div class="chips scroll week-days" role="group" aria-label="Days this week">
+    ${days.map((d, i) => `<button class="chip${i === b.day ? ' on' : ''}" data-week-day="${i}" aria-pressed="${i === b.day}">${esc(d.label)}<span class="count">${perDay[i].length}</span></button>`).join('')}
+  </div>`;
+
+  const kindWord = exploreKind === 'donghua' ? 'donghua' : exploreKind === 'anime' ? 'anime' : '';
+  const dayWord = b.day === 0 ? 'today' : b.day === 1 ? 'tomorrow' : `on ${days[b.day].label}`;
+
+  let body;
+  if (b.loading && !b.items.length) {
+    body = `<div class="skel-air" aria-busy="true" aria-label="Loading this week's schedule">${Array.from({ length: 4 }, (_, i) => `
+      <div class="skel-row" style="--i:${i}">
+        <div class="skel line t" style="width:44px"></div>
+        <div class="skel cover"></div>
+        <div class="skel-info">
+          <div class="skel line b" style="width:${66 - i * 7}%"></div>
+          <div class="skel line" style="width:${36 + i * 9}%"></div>
+        </div>
+      </div>`).join('')}</div>`;
+  } else if (b.error) {
+    body = `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-week-retry>Try again</button></div>`;
+  } else if (!perDay[b.day].length) {
+    body = `<div class="empty slim">${mochi('alive')}<p>No${kindWord ? ` ${kindWord}` : ''} episodes ${esc(dayWord)} ✿</p></div>`;
+  } else {
+    body = `<section class="day"><ul>${perDay[b.day].map(weekRow).join('')}</ul></section>`;
+  }
+
+  main.innerHTML = `<div class="air-head rec-head"><div>
+      <button class="link back-link" data-browse-back>‹ Explore</button><h2>${esc(b.title)}</h2>
+      <p class="dim">Everything airing in the next 7 days, in your time zone.</p></div></div>
+    ${exploreTypeSeg()}${tabs}${body}`;
 }
 
 /* ---------- show details (detail + preview sheets) ---------- */
@@ -948,12 +1067,16 @@ function placeInd(sel, key) {
   indPos[key] = to;
 }
 function render(animate = false) {
-  const strips = [...main.querySelectorAll('.chips.scroll')].map((c) => c.scrollLeft);
+  // Strips are remembered by their label, so a sideways row in one view can't shove another view's row along.
+  const strips = [...main.querySelectorAll('.chips.scroll')].map((c) => [c.getAttribute('aria-label') || '', c.scrollLeft]);
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
-  else if (ui.view === 'explore') { if (browse) renderBrowse(); else renderExplore(); loadRecs(); loadExplore(); }
+  else if (ui.view === 'explore') { if (browse) { if (browse.kind === 'week') renderWeek(); else renderBrowse(); } else renderExplore(); loadRecs(); loadExplore(); }
   else renderList();
-  main.querySelectorAll('.chips.scroll').forEach((c, i) => { if (strips[i]) c.scrollLeft = strips[i]; });
+  main.querySelectorAll('.chips.scroll').forEach((c) => {
+    const keep = strips.find(([k]) => k === (c.getAttribute('aria-label') || ''));
+    if (keep?.[1]) c.scrollLeft = keep[1];
+  });
   if (animate && !reduceMotion()) {
     void main.offsetWidth;
     main.classList.add('animate');
@@ -1671,13 +1794,32 @@ document.addEventListener('click', (ev) => {
   } else if (d.exKind) {
     if (d.exKind === exploreKind) return;
     exploreKind = d.exKind;
-    if (browse) {
+    if (browse?.kind === 'week') {
+      render(); // the week is already in memory: just re-filter the tabs and rows
+    } else if (browse) {
       // The server filters donghua, so start the grid over for the new type.
       Object.assign(browse, { items: [], page: 0, hasNext: true, loading: false, error: false });
       render(); loadBrowse();
     } else render();
   } else if (d.seeAll) {
     openBrowse(d.seeAll, null, d.title);
+  } else if ('weekOpen' in d) {
+    openWeek();
+  } else if ('weekJump' in d) {
+    // From the Airing tab: leave an Explore entry behind, so back lands on Explore before Airing.
+    if (ui.view !== 'explore') {
+      history.pushState({ view: 'explore' }, '');
+      ui.view = 'explore';
+      saveUi();
+    }
+    openWeek();
+  } else if ('weekDay' in d) {
+    const i = Number(d.weekDay);
+    if (!browse || browse.kind !== 'week' || browse.day === i) return;
+    browse.day = i;
+    renderWeek();
+  } else if ('weekRetry' in d) {
+    loadWeek({ force: true });
   } else if (d.genre) {
     openBrowse('genre', d.genre, d.genre);
   } else if (d.quickAdd) {
