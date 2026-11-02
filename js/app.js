@@ -312,7 +312,7 @@ function renderList() {
     ${ui.status === 'watching' ? continueWatching() : ''}
     ${items.length ? `<div class="cards${ui.layout === 'grid' ? ' grid' : ''}">${items.map(ui.layout === 'grid' ? gridCard : card).join('')}</div>` : emptyState()}
     ${appPromo()}
-    ${store.cloudEnabled ? (store.pendingCount() > 0 ? `<p class="local-note">${store.pendingCount()} change${store.pendingCount() === 1 ? '' : 's'} waiting to sync</p>` : '') : '<p class="local-note">Saved on this device only.</p>'}`;
+    ${store.cloudEnabled ? '' : '<p class="local-note">Saved on this device only.</p>'}`;
 }
 
 /* ---------- filter sheet ---------- */
@@ -1426,14 +1426,83 @@ function flushNotes() {
   });
 }
 
+/* ---------- sync status ---------- */
+
+const plural = (n) => `${n} change${n === 1 ? '' : 's'}`;
+
+function agoText(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 45) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? '' : 's'} ago`;
+}
+
+// One source of truth for the header pill and the line in Settings.
+function syncView() {
+  const queued = store.pendingCount();
+  const state = store.syncState();
+  if (state === 'offline' || !navigator.onLine) {
+    return {
+      state: 'off', icon: '☁', word: 'Offline', queued,
+      long: `☁ Offline — will sync${queued ? ` · ${plural(queued)} waiting` : ''}`,
+    };
+  }
+  if (state === 'syncing' || queued) {
+    return { state: 'busy', icon: '↻', word: 'Syncing…', queued: 0, long: `↻ Syncing…${queued ? ` · ${plural(queued)}` : ''}` };
+  }
+  const at = store.lastSyncedAt();
+  return { state: 'ok', icon: '✓', word: 'Synced', queued: 0, long: at ? `✓ Synced · last synced ${agoText(Date.now() - at)}` : '✓ Synced' };
+}
+
+function renderSyncPill() {
+  const v = syncView();
+  const pill = $('#syncPill');
+  if (pill) {
+    pill.hidden = !store.cloudEnabled;
+    pill.dataset.state = v.state;
+    const ico = pill.querySelector('.sync-ico');
+    const word = pill.querySelector('.sync-word');
+    if (ico) ico.textContent = v.icon;
+    if (word) word.textContent = v.word;
+    pill.querySelector('.sync-count')?.remove();
+    if (v.queued) {
+      const badge = document.createElement('span');
+      badge.className = 'sync-count';
+      badge.textContent = String(v.queued);
+      pill.append(badge);
+    }
+    pill.title = v.long;
+    pill.setAttribute('aria-label', v.state === 'ok' ? `${v.long} — sync now` : `${v.long} — tap to sync now`);
+  }
+  // ...and the "last synced 2 min ago" line, when Settings is open.
+  const line = $('#acctState');
+  if (line) {
+    line.textContent = v.long;
+    line.dataset.state = v.state;
+  }
+}
+
+async function syncNow() {
+  try {
+    await store.flushQueue();
+    await store.refresh();
+  } catch {
+    toast("Couldn't reach the sync server just yet — I'll keep trying");
+  }
+  renderSyncPill();
+}
+
 /* ---------- backup + app info sheet ---------- */
 
 function renderSettings() {
   const count = store.all().length;
-  $('#settingsBody').innerHTML = `
-    ${statsSection()}
-    <h2>Your shelf</h2>
-    <p class="dim">${count} show${count === 1 ? '' : 's'} saved${store.cloudEnabled ? '' : ' on this device'}.</p>
+  const email = store.currentUser()?.email;
+  // With an account the list travels by itself, so these are for the rare cases only.
+  const backups = `
     <section class="d-sec"><h3>Back up</h3>
       <p class="dim small">Copies your whole list as a code. Paste it into a note or a message to yourself to keep it safe, or to move it to another device.</p>
       <button class="pill" data-backup>Copy backup code</button>
@@ -1443,14 +1512,32 @@ function renderSettings() {
       <p class="dim small">Paste a backup code from another device. New shows are added, and for shows on both, the most recent change wins. Nothing gets deleted.</p>
       <textarea id="restoreIn" rows="3" placeholder="Paste a backup code here…" aria-label="Backup code to restore"></textarea>
       <button class="pill soft" data-restore>Restore</button>
-    </section>
+    </section>`;
+  $('#settingsBody').innerHTML = `
+    ${store.cloudEnabled ? `
+      <section class="acct">
+        <p class="acct-mail">Signed in as <b>${esc(email || 'your account')}</b></p>
+        <p class="acct-sync"><span id="acctState">${esc(syncView().long)}</span></p>
+        <p class="dim small">Your list is saved to your account automatically — sign in with this same email on any device and it's all there.</p>
+      </section>` : ''}
+    ${statsSection()}
+    <h2>Your shelf</h2>
+    <p class="dim">${count} show${count === 1 ? '' : 's'} saved${store.cloudEnabled ? '' : ' on this device'}.</p>
+    ${store.cloudEnabled ? '' : backups}
     <section class="d-sec"><h3>App</h3>
       ${isApp
         ? `<p class="dim small">Version ${esc(appInfo?.version || '?')}</p>
            <button class="pill soft" data-check-update>Check for updates</button>
            <p class="dim small" id="updateMsg"></p>`
         : `<p class="dim small">On an Android phone? <a class="al-link" href="${APK_URL}">Get the Cozy Corner app</a></p>`}
-    </section>`;
+    </section>
+    ${store.cloudEnabled
+      ? `<details class="adv">
+           <summary>Advanced · export or import a list</summary>
+           ${backups}
+         </details>`
+      : ''}`;
+  renderSyncPill();
 }
 
 async function copyBackup() {
@@ -1676,6 +1763,8 @@ document.addEventListener('click', (ev) => {
       const msg = $('#updateMsg');
       if (msg) msg.textContent = u ? `Version ${u.versionName} is ready: tap Update on your shelf ✿` : "You're on the newest version ✿";
     });
+  } else if (t.id === 'syncPill') {
+    syncNow();
   } else if (t.id === 'settingsBtn') {
     syncFilterSheet();
     renderSettings();
@@ -1767,6 +1856,7 @@ addEventListener('popstate', () => {
 
 setInterval(() => {
   document.querySelectorAll('[data-cd]').forEach((el) => { el.textContent = countdown(Number(el.dataset.cd)); });
+  if ($('#settingsDlg').open) renderSyncPill(); // keeps "last synced N min ago" honest
 }, 30000);
 
 document.addEventListener('visibilitychange', () => {
@@ -1855,6 +1945,9 @@ function showApp(mode) {
     if (store.all().some((e) => !(e.anilist_id in airing) && !['completed', 'dropped'].includes(e.status))) loadAiring();
     if (ui.view === 'explore') loadRecs();
   });
+  // Sync state changes only touch the little pill, never a whole re-render.
+  store.subscribeSync(renderSyncPill);
+  renderSyncPill();
   if (ui.view !== 'list') history.pushState({ view: ui.view }, '');
   render(true);
   hideSplash();

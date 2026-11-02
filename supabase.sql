@@ -75,3 +75,15 @@ create policy "partner can read" on public.entries for select
         )
     )
   );
+
+-- ============================================================
+--  Live sync — run once to turn on live sync
+--  Lets a change made on one device show up on the other straight
+--  away, instead of waiting for the app to be reopened.
+--  Realtime still respects the read policies above, so you only
+--  ever receive your own rows.
+--  (If it says "already member of publication", it is already on.)
+-- ============================================================
+
+alter publication supabase_realtime add table public.entries;
+

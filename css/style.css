@@ -193,6 +193,39 @@ svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; 
   :root:not([data-theme="light"]) .i-moon { display: none; }
 }
 
+/* live sync pill — sits with the header buttons, never wraps the header */
+.sync-pill {
+  display: inline-flex; align-items: center; gap: 4px; align-self: center;
+  height: 26px; padding: 0 9px; border-radius: 999px; white-space: nowrap;
+  font: 700 0.72rem/1 'Nunito', sans-serif;
+  color: var(--mint);
+  background: color-mix(in srgb, var(--mint-soft) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mint) 24%, transparent);
+}
+.sync-pill[data-state="busy"] {
+  color: var(--lav);
+  background: color-mix(in srgb, var(--lav-soft) 90%, transparent);
+  border-color: color-mix(in srgb, var(--lav) 26%, transparent);
+}
+.sync-pill[data-state="off"] {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  border-color: var(--glass-line);
+}
+.sync-pill .sync-ico { font-size: 0.8rem; line-height: 1; }
+.sync-pill[data-state="busy"] .sync-ico { display: inline-block; animation: syncSpin 1.4s linear infinite; }
+@keyframes syncSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sync-pill[data-state="busy"] .sync-ico { animation: none; } }
+.sync-pill .sync-count {
+  min-width: 15px; padding: 0 4px; border-radius: 999px;
+  background: currentColor; color: var(--paper); font-size: 0.62rem; text-align: center;
+}
+@media (max-width: 500px) {
+  /* Phones: icon plus a short word, so the header stays on one line at 390px. */
+  .sync-pill { height: 24px; padding: 0 7px; gap: 3px; font-size: 0.66rem; }
+  .sync-pill .sync-ico { font-size: 0.72rem; }
+}
+
 /* bottom nav on phones */
 .nav {
   position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20;
@@ -574,6 +607,28 @@ textarea {
 }
 .remove.armed { background: #ffdfe2; color: #c0303e; }
 
+/* ---------- settings: account + tucked-away backups ---------- */
+#settingsBody .acct {
+  padding: 14px 16px; margin-bottom: 6px; border-radius: 18px;
+  background: color-mix(in srgb, var(--lav-soft) 46%, transparent);
+  border: 1px solid var(--glass-line);
+}
+.acct-mail { margin: 0; font-size: 0.92rem; }
+.acct-mail b { word-break: break-word; }
+.acct-sync { margin: 3px 0 6px; font-weight: 700; font-size: 0.85rem; color: var(--mint); }
+.acct-sync [data-state="busy"] { color: var(--lav); }
+.acct-sync [data-state="off"] { color: var(--muted); }
+.acct .dim.small { margin: 0; }
+#settingsBody .adv { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 6px; }
+#settingsBody .adv > summary {
+  list-style: none; cursor: pointer;
+  padding: 10px 2px; font-weight: 700; font-size: 0.85rem; color: var(--muted);
+}
+#settingsBody .adv > summary::-webkit-details-marker { display: none; }
+#settingsBody .adv > summary::after { content: ' ⌄'; }
+#settingsBody .adv[open] > summary::after { content: ' ⌃'; }
+@media (hover: hover) { #settingsBody .adv > summary:hover { color: var(--lav); } }
+
 /* ---------- login ---------- */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
 .login-card {
@@ -584,6 +639,7 @@ textarea {
 .login-card h1 { font-size: 1.8rem; margin-top: 4px; }
 .login-card form { display: grid; gap: 10px; margin-top: 18px; text-align: left; }
 .login-card label { font-weight: 700; font-size: 0.9rem; }
+.login-hint { margin: -2px 0 2px; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
 .login-card input {
   padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line);
   background: var(--bg); font-size: 1rem;

@@ -13,6 +13,14 @@ let sb = null;
 let user = null;
 let entries = [];
 const listeners = new Set();
+const syncListeners = new Set();
+
+// Live sync state: 'synced' when the list matches the server, 'syncing' while a
+// round trip is in flight, 'offline' when writes are queued or the live link dropped.
+let sync = 'synced';
+let syncedAt = 0; // ms timestamp of the last successful round trip
+let channel = null;
+let channelReady = false;
 
 const readLS = (k, fallback) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -24,6 +32,23 @@ const getQueue = () => (queueKey() ? readLS(queueKey(), []) : []);
 const setQueue = (q) => { if (queueKey()) writeLS(queueKey(), q); };
 export const pendingCount = () => getQueue().length;
 
+/* ---------- live sync state ---------- */
+
+export const syncState = () => sync;
+export const lastSyncedAt = () => syncedAt;
+export const subscribeSync = (fn) => syncListeners.add(fn);
+
+function setSync(next, at) {
+  const changed = next !== sync || Boolean(at && at !== syncedAt);
+  sync = next;
+  if (at) syncedAt = at;
+  if (changed) syncListeners.forEach((fn) => { try { fn(); } catch {} });
+}
+
+const markSynced = () => setSync('synced', Date.now());
+// A queued change means the server doesn't have it yet: keep saying so.
+const settleSync = () => (pendingCount() ? setSync('offline') : markSynced());
+
 function enqueue(op) {
   const q = getQueue();
   q.push(op);
@@ -31,8 +56,14 @@ function enqueue(op) {
 }
 
 export async function flushQueue() {
-  if (!sb || !user || !navigator.onLine) return;
+  if (!sb || !user) return;
+  if (!navigator.onLine) {
+    setSync('offline');
+    return;
+  }
   const q = getQueue();
+  const hadPending = q.length > 0;
+  if (hadPending) setSync('syncing');
   // Replay queued writes; drop non-network errors and continue; stop on network error.
   while (q.length) {
     const item = q[0];
@@ -59,6 +90,7 @@ export async function flushQueue() {
     }
   }
   emit();
+  if (hadPending) settleSync();
 }
 
 function emit() {
@@ -92,17 +124,81 @@ async function startCloud(u) {
   entries = readLS(cacheKey(), []);
   emit();
   // Show the cached list straight away; the server copy replaces it when it arrives.
-  migrateLocal().then(refresh).catch((err) => console.warn('sync failed', err));
-  
+  migrateLocal().then(refresh).catch((err) => {
+    console.warn('sync failed', err);
+    setSync('offline');
+  }).finally(() => startRealtime());
+
   const handleSync = (ev) => {
+    if (ev?.type === 'offline') {
+      setSync('offline');
+      return;
+    }
+    if (ev?.type === 'online') setSync('syncing');
     if (ev?.type === 'online' || document.visibilityState === 'visible') {
       flushQueue().then(refresh).catch(() => {});
     }
   };
   document.addEventListener('visibilitychange', handleSync);
   window.addEventListener('online', handleSync);
+  window.addEventListener('offline', handleSync);
   
   flushQueue().catch(() => {});
+}
+
+/* ---------- Supabase Realtime: another device's edits arrive without a reload ---------- */
+
+function startRealtime() {
+  if (!sb || !user) return;
+  if (channel) {
+    try { sb.removeChannel(channel); } catch {}
+    channel = null;
+  }
+  channelReady = false;
+  channel = sb.channel('entries:' + user.id).on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'entries', filter: 'user_id=eq.' + user.id },
+    onRealtimeChange,
+  );
+  channel.subscribe(onRealtimeStatus);
+}
+
+function onRealtimeStatus(status) {
+  if (status === 'SUBSCRIBED') {
+    // After a drop, catch up on anything that happened while we were away.
+    if (channelReady) flushQueue().then(refresh).catch(() => {});
+    channelReady = true;
+    if (!pendingCount()) markSynced();
+  } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+    // Realtime is down; writes still queue, and supabase-js reconnects by itself.
+    setSync('offline');
+  }
+}
+
+// Our own writes echo back here too — the updated_at comparison makes that a no-op.
+function onRealtimeChange({ eventType, new: row, old } = {}) {
+  if (eventType === 'DELETE') {
+    if (!old?.id) return;
+    const before = entries.length;
+    entries = entries.filter((e) => e.id !== old.id);
+    if (entries.length === before) return;
+    emit();
+    if (!pendingCount()) markSynced();
+    return;
+  }
+  if (!row?.id) return;
+  // A change still waiting in the offline queue is newer than this row: leave it be.
+  const queued = getQueue().some((item) => item.id === row.id || item.row?.id === row.id);
+  if (queued) return;
+  const i = entries.findIndex((e) => e.id === row.id);
+  if (i === -1) {
+    entries = [pick(row), ...entries];
+  } else {
+    if (String(row.updated_at || '') <= String(entries[i].updated_at || '')) return;
+    entries = entries.map((e, j) => (j === i ? pick(row) : e));
+  }
+  emit();
+  if (!pendingCount()) markSynced();
 }
 
 // Anything saved before syncing was set up gets uploaded on first sign-in.
@@ -116,8 +212,12 @@ async function migrateLocal() {
 
 export async function refresh() {
   if (!sb || !user) return;
+  setSync('syncing');
   const { data, error } = await sb.from('entries').select('*').order('updated_at', { ascending: false });
-  if (error) throw error;
+  if (error) {
+    setSync('offline');
+    throw error;
+  }
   entries = data;
   // Apply queued patches on top of server rows so locally-queued changes aren't lost
   const q = getQueue();
@@ -131,6 +231,7 @@ export async function refresh() {
     }
   }
   emit();
+  settleSync();
 }
 
 function isNetworkError(err) {
@@ -153,24 +254,31 @@ export async function add(show, status) {
   entries = [row, ...entries];
   emit();
   if (sb && user) {
+    const was = sync;
+    setSync('syncing');
     try {
       const { error } = await sb.from('entries').insert(row);
       if (error) {
         if (isNetworkError(error)) {
           enqueue({ op: 'add', row });
+          setSync('offline');
           return row;
         }
         entries = entries.filter((e) => e.id !== row.id);
         emit();
+        setSync(was);
         throw error;
       }
+      settleSync();
     } catch (err) {
       if (isNetworkError(err)) {
         enqueue({ op: 'add', row });
+        setSync('offline');
         return row;
       }
       entries = entries.filter((e) => e.id !== row.id);
       emit();
+      setSync(was);
       throw err;
     }
   }
@@ -184,24 +292,31 @@ export async function update(id, patch) {
   entries = entries.map((e) => (e.id === id ? next : e));
   emit();
   if (sb && user) {
+    const was = sync;
+    setSync('syncing');
     try {
       const { error } = await sb.from('entries').update(pick({ ...patch, updated_at: next.updated_at })).eq('id', id);
       if (error) {
         if (isNetworkError(error)) {
           enqueue({ op: 'update', id, patch: { ...patch, updated_at: next.updated_at } });
+          setSync('offline');
           return;
         }
         entries = entries.map((e) => (e.id === id ? prev : e));
         emit();
+        setSync(was);
         throw error;
       }
+      settleSync();
     } catch (err) {
       if (isNetworkError(err)) {
         enqueue({ op: 'update', id, patch: { ...patch, updated_at: next.updated_at } });
+        setSync('offline');
         return;
       }
       entries = entries.map((e) => (e.id === id ? prev : e));
       emit();
+      setSync(was);
       throw err;
     }
   }
@@ -212,24 +327,31 @@ export async function remove(id) {
   entries = entries.filter((e) => e.id !== id);
   emit();
   if (sb && user) {
+    const was = sync;
+    setSync('syncing');
     try {
       const { error } = await sb.from('entries').delete().eq('id', id);
       if (error) {
         if (isNetworkError(error)) {
           enqueue({ op: 'remove', id });
+          setSync('offline');
           return;
         }
         entries = prev;
         emit();
+        setSync(was);
         throw error;
       }
+      settleSync();
     } catch (err) {
       if (isNetworkError(err)) {
         enqueue({ op: 'remove', id });
+        setSync('offline');
         return;
       }
       entries = prev;
       emit();
+      setSync(was);
       throw err;
     }
   }

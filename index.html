@@ -63,6 +63,10 @@
       </nav>
 
       <div class="top-actions">
+        <button class="sync-pill" id="syncPill" type="button" hidden>
+          <span class="sync-ico" aria-hidden="true">✓</span>
+          <span class="sync-word">Synced</span>
+        </button>
         <button class="icon-btn" id="settingsBtn" aria-label="Stats, backup and app info">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         </button>
@@ -94,6 +98,7 @@
       <form id="loginForm">
         <label for="email">Email</label>
         <input id="email" type="email" required autocomplete="email" placeholder="you@example.com">
+        <p class="login-hint">Use the same email on every device — that's how your list follows you.</p>
         <button class="pill big" type="submit">Send me a sign-in email</button>
       </form>
       <form id="codeForm" hidden>
