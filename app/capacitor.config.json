@@ -4,5 +4,9 @@
   "webDir": "www",
   "android": {
     "backgroundColor": "#fff6ee"
+  },
+  "server": {
+    "url": "https://desolatemartial553.github.io/anime-tracker/",
+    "errorPath": "offline.html"
   }
 }

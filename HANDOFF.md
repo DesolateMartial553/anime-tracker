@@ -23,8 +23,9 @@ One script, and it refuses to finish unless the APK is right:
 3. `./gradlew assembleRelease` (JDK 21; the script picks `/usr/lib/jvm/java-21-openjdk`);
 4. copies the signed APK to `app/dist/CozyCorner.apk`;
 5. verifies the APK itself: `assets/public/index.html`, `assets/public/js/app.js` and
-   `assets/public/js/anilist.js` must be byte-identical to the site, and `aapt2 dump badging` must report
-   the requested versionCode/versionName. It prints the timestamp and sha256.
+   `assets/public/js/anilist.js` must be byte-identical to the site, `assets/capacitor.config.json` must load
+   the live site (`server.url`) with `errorPath: "offline.html"`, `assets/public/offline.html` must exist,
+   and `aapt2 dump badging` must report the requested versionCode/versionName. It prints the timestamp and sha256.
 
 It never pushes, tags or publishes. Publishing is manual, in this order:
 
@@ -60,6 +61,11 @@ versionName 2.8.1. Only the tag's commit is wrong; nothing downloads from the ta
    replaced by `app/scripts/release.sh`.
 
 ## Unreleased work after v2.8.1 (local commits, not pushed, no APK built)
+- **SYNC-2** the app now loads the **live site** (`server.url` in `app/capacitor.config.json`), so a website
+  deploy reaches her app on the next open and a new APK is only needed for native changes (Capacitor,
+  plugins, icons). `sw.js` caches the app shell for offline, `offline.html` is the error/offline page, and
+  `js/store.js` falls back to the stored session + `cc.cache.<user>` when a token can't be refreshed offline.
+  After installing the switch-over APK she signs in once in the app; her list is in her account.
 - **P1** cleanup: dead code and the `couple.html` stub removed; search swipe is right-only (→ Plan to watch);
   Undo on `+1` / status toasts; an offline write queue in `js/store.js` (`cc.queue.<user>`, replayed on
   reconnect; rejected items are dropped so they can't block the queue; adds replay as upserts).

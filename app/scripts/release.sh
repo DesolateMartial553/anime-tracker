@@ -7,7 +7,8 @@
 #   2. npm run sync            (copies the site into app/www, then into the Android assets)
 #   3. ./gradlew assembleRelease
 #   4. copies the signed APK to app/dist/CozyCorner.apk
-#   5. verifies the APK itself (byte-identical index.html, app.js and anilist.js, right versionCode/Name)
+#   5. verifies the APK itself: byte-identical index.html, app.js and anilist.js, a capacitor.config.json
+#      pointing at the live site with the offline fallback, assets/public/offline.html, right versionCode/Name
 #
 # It never pushes, tags or publishes anything. Publishing is a separate, manual step.
 set -euo pipefail
@@ -94,6 +95,31 @@ echo "ok  assets/public/js/app.js == js/app.js"
 unzip -p "$DIST_APK" assets/public/js/anilist.js | cmp - js/anilist.js \
   || fail "APK's assets/public/js/anilist.js is not byte-identical to js/anilist.js"
 echo "ok  assets/public/js/anilist.js == js/anilist.js"
+
+# The app loads the live site, so the APK must carry that URL and the offline fallback page.
+CAP_CFG=$(unzip -p "$DIST_APK" assets/capacitor.config.json 2>/dev/null || true)
+[ -n "$CAP_CFG" ] || fail "APK has no assets/capacitor.config.json"
+printf '%s' "$CAP_CFG" | node -e '
+  let raw = "";
+  process.stdin.on("data", (c) => { raw += c; });
+  process.stdin.on("end", () => {
+    const server = (JSON.parse(raw) || {}).server || {};
+    const url = String(server.url || "");
+    if (!url.startsWith("https://desolatemartial553.github.io/anime-tracker/")) {
+      console.error("server.url is " + JSON.stringify(url));
+      process.exit(1);
+    }
+    if (server.errorPath !== "offline.html") {
+      console.error("server.errorPath is " + JSON.stringify(server.errorPath));
+      process.exit(1);
+    }
+  });
+' || fail "APK's capacitor.config.json does not load the live site with errorPath offline.html"
+echo "ok  assets/capacitor.config.json loads the live site, offline fallback set"
+
+unzip -l "$DIST_APK" assets/public/offline.html | grep -qE ' assets/public/offline\.html$' \
+  || fail "APK has no assets/public/offline.html"
+echo "ok  assets/public/offline.html is in the APK"
 
 AAPT2=""
 for bt in 36.0.0 35.0.0 34.0.0; do

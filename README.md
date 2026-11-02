@@ -147,6 +147,14 @@ Plain HTML/CSS/JS (ES modules), no build step. Hosted on GitHub Pages from the r
 
     python -m http.server 8765      # then open http://127.0.0.1:8765
 
+### The app loads the live site
+The APK is a thin shell: `app/capacitor.config.json` sets `server.url` to the GitHub Pages address, so the
+app always runs the deployed website — a website deploy reaches her app on the next open, no new APK needed.
+`sw.js` (service worker) caches the app shell so it still opens offline, and `offline.html` is the fallback
+shown if the very first open has no connection. A new APK is only needed for native changes (Capacitor
+upgrades, plugins, icons, version bumps). Because the app now *is* the website, signing in once in the app
+after the switch-over moves her device copy to the website's origin; her list is in her account either way.
+
 ### Build a new APK
 
     cd app && npm install        # first time only

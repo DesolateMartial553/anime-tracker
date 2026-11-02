@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>You’re offline ✿ Cozy Corner</title>
+  <meta name="theme-color" content="#fff6ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16132a" media="(prefers-color-scheme: dark)">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #fff6ee;
+      --paper: #fffdfa;
+      --ink: #4b3a52;
+      --muted: #8d7c93;
+      --pink: #ff86b3;
+      --pink-ink: #c2386f;
+      --sticker: #ffffff;
+      --face: #4b3a52;
+      --shadow: 0 10px 28px rgba(140, 90, 110, 0.16);
+      --dots: rgba(255, 134, 179, 0.16);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #16132a;
+        --paper: #221d3e;
+        --ink: #f3eaff;
+        --muted: #a99fc7;
+        --pink: #ff96c0;
+        --pink-ink: #ffb3d1;
+        --sticker: #f6efff;
+        --face: #3a2f55;
+        --shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+        --dots: rgba(255, 255, 255, 0.22);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      background-color: var(--bg);
+      background-image: radial-gradient(var(--dots) 1.2px, transparent 1.2px);
+      background-size: 18px 18px;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .card {
+      max-width: 380px;
+      width: 100%;
+      padding: 30px 24px 28px;
+      border-radius: 22px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .mochi { display: block; width: 120px; height: 100px; margin: 0 auto 10px; }
+    .m-body { fill: var(--sticker); stroke: var(--pink); stroke-width: 3; }
+    .m-ink { fill: var(--face); stroke: none; }
+    .m-blush { fill: var(--pink); stroke: none; opacity: 0.55; }
+    .m-mouth { fill: none; stroke: var(--face); stroke-width: 2.2; stroke-linecap: round; }
+    h1 {
+      font-size: 1.45rem;
+      margin: 4px 0 10px;
+      letter-spacing: 0.01em;
+    }
+    p { margin: 0 0 22px; color: var(--muted); font-size: 0.98rem; }
+    p b { color: var(--ink); }
+    button {
+      font: inherit;
+      font-weight: 800;
+      font-size: 0.95rem;
+      color: #fff;
+      background: var(--pink);
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 26px;
+      width: 100%;
+      cursor: pointer;
+      box-shadow: 0 5px 14px rgba(255, 110, 165, 0.32);
+    }
+    button:active { transform: translateY(1px); }
+    @media (prefers-color-scheme: dark) { button { color: #2a1030; } }
+    button:focus-visible { outline: 3px solid var(--pink-ink); outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <svg class="mochi" viewBox="0 0 120 100" aria-hidden="true">
+      <path d="M24 44 L30 12 L52 32 Z" class="m-body"/>
+      <path d="M96 44 L90 12 L68 32 Z" class="m-body"/>
+      <ellipse cx="60" cy="62" rx="48" ry="34" class="m-body"/>
+      <circle cx="44" cy="60" r="4.5" class="m-ink"/>
+      <circle cx="76" cy="60" r="4.5" class="m-ink"/>
+      <ellipse cx="34" cy="70" rx="7" ry="4" class="m-blush"/>
+      <ellipse cx="86" cy="70" rx="7" ry="4" class="m-blush"/>
+      <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
+    </svg>
+    <h1>You’re offline ✿</h1>
+    <p>Cozy Corner needs the internet the first time it opens.<br><b>Your list is safe in your account.</b></p>
+    <button type="button" onclick="location.href = 'https://desolatemartial553.github.io/anime-tracker/'">Try again</button>
+  </main>
+</body>
+</html>

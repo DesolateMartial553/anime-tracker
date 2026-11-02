@@ -171,5 +171,14 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>
+  <script>
+    // Offline shell: after the first visit the site still opens without a connection.
+    try {
+      const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      }
+    } catch (e) {}
+  </script>
 </body>
 </html>

@@ -32,6 +32,26 @@ const getQueue = () => (queueKey() ? readLS(queueKey(), []) : []);
 const setQueue = (q) => { if (queueKey()) writeLS(queueKey(), q); };
 export const pendingCount = () => getQueue().length;
 
+// supabase-js keeps the session under 'sb-<project-ref>-auth-token'. Reading it directly lets the
+// app open offline after the token expired: getSession() would try to refresh it, fail, and drop it.
+const SESSION_KEY = (() => {
+  try { return 'sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token'; } catch { return null; }
+})();
+
+// The user from the stored session, in either storage shape ('{…session}' or '{currentSession: …}').
+function storedSessionUser() {
+  if (!SESSION_KEY) return null;
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const u = data?.user || data?.currentSession?.user;
+    return u?.id ? u : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ---------- live sync state ---------- */
 
 export const syncState = () => sync;
@@ -109,13 +129,37 @@ export async function init() {
     entries = readLS(LOCAL_KEY, []);
     return 'local';
   }
-  const { createClient } = await import(SUPABASE_ESM);
+  // Read the stored session before supabase-js touches it. Offline with an expired token,
+  // getSession() tries to refresh, fails, and forgets the session — she'd get the sign-in screen
+  // even though her cached list is right there.
+  const storedUser = storedSessionUser();
+  let createClient;
+  try {
+    ({ createClient } = await import(SUPABASE_ESM));
+  } catch (err) {
+    // supabase-js isn't cached yet (first open offline): show the cached shelf, queue any edits.
+    if (storedUser) {
+      console.warn('supabase-js unavailable offline, using the cached copy', err);
+      await startCloud(storedUser);
+      setSync('offline');
+      return 'cloud';
+    }
+    throw err;
+  }
   sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { flowType: 'implicit', persistSession: true, detectSessionInUrl: true },
   });
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) return 'login';
-  await startCloud(session.user);
+  let session = null;
+  try {
+    ({ data: { session } } = await sb.auth.getSession());
+  } catch (err) {
+    console.warn('getSession failed, falling back to the stored session', err);
+  }
+  const account = session?.user || storedUser;
+  if (!account) return 'login';
+  // No live session means no round trip is possible: say so until a write lands.
+  if (!session) setSync('offline');
+  await startCloud(account);
   return 'cloud';
 }
 
@@ -212,6 +256,7 @@ function onRealtimeChange({ eventType, new: row, old } = {}) {
 
 // Anything saved before syncing was set up gets uploaded on first sign-in.
 async function migrateLocal() {
+  if (!sb) return;
   const local = readLS(LOCAL_KEY, []);
   if (!local.length) return;
   const rows = local.map((e) => pick({ ...e, user_id: user.id }));
@@ -262,6 +307,12 @@ export async function add(show, status) {
   if (user) row.user_id = user.id;
   entries = [row, ...entries];
   emit();
+  // Signed in but offline at boot (no client yet): queue it for the next connection.
+  if (user && !sb) {
+    enqueue({ op: 'add', row });
+    setSync('offline');
+    return row;
+  }
   if (sb && user) {
     const was = sync;
     setSync('syncing');
@@ -300,6 +351,11 @@ export async function update(id, patch) {
   const next = { ...prev, ...patch, updated_at: new Date().toISOString() };
   entries = entries.map((e) => (e.id === id ? next : e));
   emit();
+  if (user && !sb) {
+    enqueue({ op: 'update', id, patch: { ...patch, updated_at: next.updated_at } });
+    setSync('offline');
+    return;
+  }
   if (sb && user) {
     const was = sync;
     setSync('syncing');
@@ -335,6 +391,11 @@ export async function remove(id) {
   const prev = entries;
   entries = entries.filter((e) => e.id !== id);
   emit();
+  if (user && !sb) {
+    enqueue({ op: 'remove', id });
+    setSync('offline');
+    return;
+  }
   if (sb && user) {
     const was = sync;
     setSync('syncing');

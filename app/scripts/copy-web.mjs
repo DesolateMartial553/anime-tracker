@@ -9,7 +9,7 @@ const www = join(app, 'www');
 
 rmSync(www, { recursive: true, force: true });
 mkdirSync(www);
-for (const f of ['index.html', 'css', 'js', 'fonts', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.json']) {
+for (const f of ['index.html', 'offline.html', 'sw.js', 'css', 'js', 'fonts', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.json']) {
   cpSync(join(root, f), join(www, f), { recursive: true });
 }
 console.log('copied site into', www);
