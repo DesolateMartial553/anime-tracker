@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getDetails } from './anilist.js';
+import { searchAnime, getAiring, getRecommendations, clearRecommendationCache, getExplore, getBrowse, getDetails, getMoods } from './anilist.js';
 import { SUBTITLE, APK_URL } from './config.js';
 
 const STATUSES = [
@@ -18,6 +18,15 @@ const HEART_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-
 const PLAY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5.5v13l11-6.5z"/></svg>';
 const SPARK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c.7 4.6 2 6.2 8.5 8.5-6.5 2.3-7.8 3.9-8.5 8.5-.7-4.6-2-6.2-8.5-8.5 6.5-2.3 7.8-3.9 8.5-8.5z"/></svg>';
 const SUGGESTIONS = ['Frieren', 'Link Click', 'Mo Dao Zu Shi', 'Spy x Family'];
+// The mood chips on Explore; `mood-cozy` matches the See-all kind in anilist.js.
+const MOOD_CHIPS = [
+  ['cozy', '☁ Cozy & healing'],
+  ['cry', '💧 Need a good cry'],
+  ['laugh', '😂 Make me laugh'],
+  ['flutter', '💗 Heart-flutter'],
+  ['hype', '⚡ Hype'],
+];
+const MOOD_KEYS = MOOD_CHIPS.map(([k]) => k);
 const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" aria-hidden="true">
   <path d="M24 44 L30 12 L52 32 Z" class="m-body m-ear m-ear-l"/>
   <path d="M96 44 L90 12 L68 32 Z" class="m-body m-ear m-ear-r"/>
@@ -27,9 +36,10 @@ const mochi = (cls = '') => `<svg class="mochi ${cls}" viewBox="0 0 120 100" ari
   <path d="M54 68 q3 4 6 0 q3 4 6 0" class="m-mouth"/>
 </svg>`;
 
-const ui = { view: 'list', status: 'watching', kind: 'all', sort: 'updated', sortChosen: false, layout: 'list' };
+const ui = { view: 'list', status: 'watching', kind: 'all', sort: 'updated', sortChosen: false, layout: 'list', mood: 'cozy' };
 try { Object.assign(ui, JSON.parse(localStorage.getItem('cc.ui')), { kind: 'all' }); } catch {}
 if (ui.view === 'foryou') ui.view = 'explore'; // the old For you tab became Explore
+if (!MOOD_KEYS.includes(ui.mood)) ui.mood = 'cozy';
 ui.layout = ui.layout === 'grid' ? 'grid' : 'list';
 ui.sortChosen = ui.sortChosen === true;
 let openId = null;
@@ -41,6 +51,8 @@ let recs = { sig: null, loading: false, error: false, sections: [] };
 const recShows = new Map();
 // Explore: live AniList shelves, plus an optional "See all" grid on top of them.
 let explore = { loading: false, error: false, data: null };
+// Moods, hidden gems and movie night: their own request, loaded after the shelves above.
+let moods = { loading: false, error: false, data: null };
 // Per-show extras (synopsis, links, sequels) fetched when a sheet opens.
 const details = new Map();
 const detailsPending = new Set();
@@ -459,6 +471,43 @@ function shelfSkeleton(n = 2) {
     </section>`).join('')}</div>`;
 }
 
+/* ---------- moods: "What's the mood?", Hidden gems, Movie night ---------- */
+
+const moodLabel = (key) => MOOD_CHIPS.find(([k]) => k === key)?.[1] || MOOD_CHIPS[0][1];
+const moodKind = (key) => (key === 'gems' || key === 'movies' ? key : `mood-${key}`);
+
+// Chips stay put while the row underneath loads, so the choice is always one tap away.
+const moodChips = () => `<div class="chips scroll genre-strip mood-strip" role="group" aria-label="Moods">
+  ${MOOD_CHIPS.map(([k, label]) => `<button class="chip${k === ui.mood ? ' on' : ''}" data-mood="${k}" aria-pressed="${k === ui.mood}">${esc(label)}</button>`).join('')}
+</div>`;
+
+// One row of blank tiles, matching shelfSkeleton's tiles, for the mood row only.
+const moodRowSkeleton = () => `<ul class="rec-row" aria-busy="true" aria-label="Loading mood picks">${Array.from({ length: 5 }, (_, i) => `
+  <li style="--i:${i}"><div class="skel-tile">
+    <div class="skel cover tile"></div>
+    <div class="skel line" style="width:${88 - i * 6}%"></div>
+    <div class="skel line" style="width:${48 + (i % 3) * 8}%"></div>
+  </div></li>`).join('')}</ul>`;
+
+function moodSection() {
+  if (moods.error) return ''; // no moods: the section simply isn't there, Explore still works
+  const items = moods.data ? (moods.data[ui.mood] || []).filter(typeOK) : [];
+  const seeAll = items.length
+    ? `<button class="see-all" data-see-all="${moodKind(ui.mood)}" data-title="${esc(moodLabel(ui.mood))}">See all ›</button>`
+    : '';
+  const row = moods.data ? (items.length ? `<ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul>` : '') : moodRowSkeleton();
+  return `<section class="rec mood-sec"><h3>What's the mood?${seeAll}</h3>${moodChips()}${row}</section>`;
+}
+
+// Hidden gems and Movie night, drawn from the same moods request, in the normal shelf shape.
+function moodShelf(key, title) {
+  if (!moods.data) return '';
+  const items = (moods.data[key] || []).filter(typeOK);
+  if (!items.length) return '';
+  return `<section class="rec"><h3>${title}<button class="see-all" data-see-all="${moodKind(key)}" data-title="${esc(title)}">See all ›</button></h3>
+    <ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul></section>`;
+}
+
 const exploreTypeSeg = () => `<div class="seg" role="group" aria-label="Show type">
   ${[['all', 'All'], ['anime', 'Anime'], ['donghua', 'Donghua']].map(([k, l]) => `<button class="${k === exploreKind ? 'on' : ''}" aria-pressed="${k === exploreKind}" data-ex-kind="${k}">${l}</button>`).join('')}
 </div>`;
@@ -622,17 +671,22 @@ function renderExplore() {
   let rest;
   if (explore.data) {
     const sh = explore.data.shelves;
-    rest = SHELVES.map(([k, title]) => {
+    const shelf = ([k, title]) => {
       if (k === 'donghua' && exploreKind === 'anime') return '';
       const items = sh[k].filter(typeOK);
       if (!items.length) return '';
       return `<section class="rec"><h3>${title}<button class="see-all" data-see-all="${k}" data-title="${esc(title)}">See all ›</button></h3>
         <ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul></section>`;
-    }).join('');
+    };
+    // Hidden gems and Movie night sit after the two "now" shelves, before the rest.
+    rest = SHELVES.slice(0, 2).map(shelf).join('')
+      + moodShelf('gems', 'Hidden gems')
+      + moodShelf('movies', 'Movie night')
+      + SHELVES.slice(2).map(shelf).join('');
   } else if (explore.error) rest = exploreFail();
   else rest = shelfSkeleton(2);
 
-  main.innerHTML = exploreHead() + genreStrip() + heroSection() + mine + rest;
+  main.innerHTML = exploreHead() + genreStrip() + heroSection() + mine + moodSection() + rest;
   wireHero();
   syncHeroTimer();
 }
@@ -757,7 +811,7 @@ async function offerSequel(e) {
 }
 
 async function loadExplore({ force = false } = {}) {
-  if (explore.loading || (!force && (explore.data || explore.error))) return;
+  if (explore.loading || (!force && (explore.data || explore.error))) { maybeLoadMoods(); return; }
   explore = { ...explore, loading: true, error: false };
   if (ui.view === 'explore' && !browse) renderExplore();
   try {
@@ -769,6 +823,28 @@ async function loadExplore({ force = false } = {}) {
     explore = { ...explore, loading: false, error: true };
   }
   if (ui.view === 'explore' && !browse) renderExplore();
+  maybeLoadMoods();
+}
+
+// Moods load after the shelves above so the first paint isn't held up. Failure just hides the section.
+async function loadMoods({ force = false } = {}) {
+  if (moods.loading || (!force && (moods.data || moods.error))) return;
+  moods = { ...moods, loading: true, error: false };
+  if (ui.view === 'explore' && !browse) renderExplore();
+  try {
+    const data = await getMoods({ force });
+    for (const list of Object.values(data)) for (const it of list) recShows.set(it.anilist_id, it);
+    moods = { loading: false, error: false, data };
+  } catch (err) {
+    console.warn('moods failed', err);
+    moods = { ...moods, loading: false, error: true };
+  }
+  if (ui.view === 'explore' && !browse) renderExplore();
+}
+
+// Called once the main Explore request has settled (success or not).
+function maybeLoadMoods() {
+  if (!moods.data && !moods.loading && !moods.error) loadMoods();
 }
 
 // "+" on a tile or in the hero: one tap onto Plan to watch, with an undo.
@@ -865,14 +941,12 @@ function placeInd(sel, key) {
   indPos[key] = to;
 }
 function render(animate = false) {
-  const chips = $('.chips.scroll');
-  const scrollLeft = chips ? chips.scrollLeft : 0;
+  const strips = [...main.querySelectorAll('.chips.scroll')].map((c) => c.scrollLeft);
   main.classList.remove('animate');
   if (ui.view === 'airing') renderAiring();
   else if (ui.view === 'explore') { if (browse) renderBrowse(); else renderExplore(); loadRecs(); loadExplore(); }
   else renderList();
-  const newChips = $('.chips.scroll');
-  if (newChips) newChips.scrollLeft = scrollLeft;
+  main.querySelectorAll('.chips.scroll').forEach((c, i) => { if (strips[i]) c.scrollLeft = strips[i]; });
   if (animate && !reduceMotion()) {
     void main.offsetWidth;
     main.classList.add('animate');
@@ -1494,6 +1568,12 @@ document.addEventListener('click', (ev) => {
     toast('Looking for fresh picks ✿');
     loadRecs({ force: true });
     loadExplore({ force: true });
+    loadMoods({ force: true });
+  } else if (d.mood) {
+    if (d.mood === ui.mood) return;
+    ui.mood = d.mood;
+    saveUi();
+    render();
   } else if (d.exKind) {
     if (d.exKind === exploreKind) return;
     exploreKind = d.exKind;

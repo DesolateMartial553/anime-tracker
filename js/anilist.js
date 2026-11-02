@@ -229,10 +229,13 @@ const EXPLORE = `query ($s: MediaSeason, $y: Int, $ns: MediaSeason, $ny: Int) {
 }
 ${SHOW_FIELDS}`;
 
-const BROWSE = `query ($page: Int, $sort: [MediaSort], $season: MediaSeason, $year: Int, $country: CountryCode, $genre: String) {
+const BROWSE = `query ($page: Int, $sort: [MediaSort], $season: MediaSeason, $year: Int, $country: CountryCode, $genre: String,
+    $tag_in: [String], $format: MediaFormat, $format_in: [MediaFormat], $averageScore_greater: Int, $popularity_lesser: Int) {
   Page(page: $page, perPage: 30) {
     pageInfo { hasNextPage }
-    media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $year, countryOfOrigin: $country, genre: $genre) { ...F }
+    media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $year, countryOfOrigin: $country, genre: $genre,
+          tag_in: $tag_in, format: $format, format_in: $format_in,
+          averageScore_greater: $averageScore_greater, popularity_lesser: $popularity_lesser) { ...F }
   }
 }
 ${SHOW_FIELDS}`;
@@ -244,6 +247,14 @@ const BROWSE_KINDS = {
   top: { sort: ['SCORE_DESC'] },
   donghua: { sort: ['TRENDING_DESC'], country: 'CN' },
   genre: { sort: ['POPULARITY_DESC'] },
+  // Moods and the two extra Explore shelves (EX2-2). Same filters as the moods query.
+  'mood-cozy': { sort: ['SCORE_DESC'], tag_in: ['Iyashikei'] },
+  'mood-cry': { sort: ['SCORE_DESC'], genre: 'Drama', tag_in: ['Tragedy'] },
+  'mood-laugh': { sort: ['SCORE_DESC'], genre: 'Comedy' },
+  'mood-flutter': { sort: ['POPULARITY_DESC'], genre: 'Romance' },
+  'mood-hype': { sort: ['TRENDING_DESC'], genre: 'Action' },
+  gems: { sort: ['SCORE_DESC'], averageScore_greater: 80, popularity_lesser: 40000, format_in: ['TV', 'ONA'] },
+  movies: { sort: ['SCORE_DESC'], format: 'MOVIE' },
 };
 
 const toExploreShow = (m) => ({ ...toShow(m), genres: (m.genres || []).slice(0, 4), banner: m.bannerImage || '', next: m.nextAiringEpisode });
@@ -272,11 +283,48 @@ export async function getBrowse({ kind, genre = null, country = null, page = 1 }
   const k = BROWSE_KINDS[kind] || BROWSE_KINDS.trending;
   // AniList reads an explicit null filter as "match nothing", so unset filters must be left out entirely.
   const vars = { page, sort: k.sort };
-  if (genre) vars.genre = genre;
+  if (genre || k.genre) vars.genre = genre || k.genre;
   if (country || k.country) vars.country = country || k.country;
+  for (const f of ['tag_in', 'format', 'format_in', 'averageScore_greater', 'popularity_lesser']) {
+    if (f in k) vars[f] = k[f];
+  }
   if ('shift' in k) Object.assign(vars, seasonOf(new Date(), k.shift));
   const d = await gql(BROWSE, vars);
   return { items: withCover(d.Page.media), hasNext: d.Page.pageInfo.hasNextPage };
+}
+
+/* ---------- Moods, hidden gems, movie night ---------- */
+
+const MOODS_KEY = 'cc.moods.v1';
+const MOODS_TTL = 24 * 60 * 60 * 1000;
+
+// One aliased request for all seven rows. Run against the live API before wiring in:
+// every alias returned 16 shows, and "Tragedy" is the sad tag that exists on AniList.
+const MOODS = `query {
+  cozy: Page(perPage: 16) { media(type: ANIME, isAdult: false, tag_in: ["Iyashikei"], sort: SCORE_DESC) { ...F } }
+  cry: Page(perPage: 16) { media(type: ANIME, isAdult: false, genre: "Drama", tag_in: ["Tragedy"], sort: SCORE_DESC) { ...F } }
+  laugh: Page(perPage: 16) { media(type: ANIME, isAdult: false, genre: "Comedy", sort: SCORE_DESC) { ...F } }
+  flutter: Page(perPage: 16) { media(type: ANIME, isAdult: false, genre: "Romance", sort: POPULARITY_DESC) { ...F } }
+  hype: Page(perPage: 16) { media(type: ANIME, isAdult: false, genre: "Action", sort: TRENDING_DESC) { ...F } }
+  gems: Page(perPage: 16) { media(type: ANIME, isAdult: false, averageScore_greater: 80, popularity_lesser: 40000, format_in: [TV, ONA], sort: SCORE_DESC) { ...F } }
+  movies: Page(perPage: 16) { media(type: ANIME, isAdult: false, format: MOVIE, sort: SCORE_DESC) { ...F } }
+}
+${SHOW_FIELDS}`;
+
+// { cozy, cry, laugh, flutter, hype, gems, movies }, cached for a day.
+export async function getMoods({ force = false } = {}) {
+  if (!force) {
+    try {
+      const c = JSON.parse(localStorage.getItem(MOODS_KEY));
+      if (c?.data && Date.now() - c.at < MOODS_TTL) return c.data;
+    } catch {}
+  }
+  const d = await gql(MOODS);
+  const data = Object.fromEntries(
+    ['cozy', 'cry', 'laugh', 'flutter', 'hype', 'gems', 'movies'].map((k) => [k, withCover(d[k].media)]),
+  );
+  try { localStorage.setItem(MOODS_KEY, JSON.stringify({ at: Date.now(), data })); } catch {}
+  return data;
 }
 
 /* ---------- show details ---------- */

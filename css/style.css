@@ -921,6 +921,13 @@ main.animate .skel-row {
   background: linear-gradient(to right, transparent, var(--bg) 90%);
 }
 
+/* moods: the same small pills, but inside a shelf and scrolling to the screen edge */
+.chips.genre-strip.mood-strip { margin: 0 -16px; padding: 2px 16px 10px; }
+.mood-sec h3 { margin-bottom: 2px; }
+@media (min-width: 820px) {
+  .chips.genre-strip.mood-strip { margin: 0; padding-inline: 0; }
+}
+
 /* hero spotlight: snap-scrolling banners of what's trending */
 .hero-wrap { margin: 0 0 18px; }
 .hero {
