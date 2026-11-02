@@ -869,12 +869,15 @@ main.animate .skel-row {
   border: 1px solid color-mix(in srgb, #fff 40%, transparent);
   background: color-mix(in srgb, var(--tint) 40%, var(--paper));
 }
+.rec-row li, .explore-grid li { position: relative; }
 .rec-plus {
-  position: absolute; right: -2px; bottom: -9px;
+  position: absolute; top: 8px; right: 8px; z-index: 2;
   display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
   background: var(--pink); color: #fff; font: 700 19px/1 'Fredoka', sans-serif;
   border: 2px solid var(--paper); box-shadow: 0 4px 10px rgba(255, 110, 165, 0.45);
+  transition: transform 0.12s;
 }
+.rec-plus:active { transform: scale(0.86); }
 .rec-name {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font: 600 0.85rem/1.25 'Fredoka', sans-serif; margin-top: 10px;
@@ -899,6 +902,81 @@ main.animate .skel-row {
 
 
 /* ---------- Explore ---------- */
+/* one compact header row: title, type switch, refresh */
+.ex-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.ex-title { font-size: 1.5rem; margin-right: auto; }
+.ex-tools { display: flex; align-items: center; gap: 8px; }
+.ex-tools .seg { padding: 2px; }
+.ex-tools .seg button { min-height: 30px; padding: 3px 11px; font-size: 0.8rem; }
+.ex-tools .icon-btn { width: 34px; height: 34px; box-shadow: none; }
+.ex-tools .icon-btn svg { width: 17px; height: 17px; }
+
+/* genres: one sideways row of small pills, fading out at the right edge */
+.genre-wrap { position: relative; margin: 0 -16px 12px; }
+.chips.genre-strip { margin: 0; padding: 2px 16px 4px; gap: 7px; flex-wrap: nowrap; align-items: center; }
+.genre-strip .chip { min-height: 34px; padding: 5px 13px; font-size: 0.8rem; }
+.genre-strip .genre-skel { flex: none; height: 34px; }
+.genre-wrap::after {
+  content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 32px; pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--bg) 90%);
+}
+
+/* hero spotlight: snap-scrolling banners of what's trending */
+.hero-wrap { margin: 0 0 18px; }
+.hero {
+  position: relative; overflow: hidden; border-radius: var(--radius);
+  border: 1px solid var(--glass-line);
+  background: color-mix(in srgb, var(--tint) 26%, var(--paper));
+  box-shadow: 0 10px 26px var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+}
+.hero-track {
+  display: flex; height: 180px; overflow-x: auto;
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+}
+.hero-track::-webkit-scrollbar { display: none; }
+.hero-slide {
+  position: relative; flex: 0 0 100%; height: 100%; overflow: hidden;
+  scroll-snap-align: start; scroll-snap-stop: always;
+}
+.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* no banner on AniList: her cover, blown up and softened, stands in */
+.hero-img.is-cover { filter: blur(16px) saturate(1.15); transform: scale(1.25); }
+.hero-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(28, 16, 40, 0.9) 0%, rgba(28, 16, 40, 0.52) 40%, rgba(28, 16, 40, 0.06) 78%);
+}
+.hero-text { position: absolute; inset: auto 0 0 0; padding: 12px 16px 14px; color: #fff; }
+.hero-text h3 {
+  font-size: 1.1rem; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.hero-text p {
+  margin: 2px 0 9px; font-size: 0.78rem; font-weight: 700;
+  color: rgba(255, 255, 255, 0.88); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+.hero-actions { display: flex; align-items: center; gap: 8px; }
+.hero-actions .pill { min-height: 34px; padding: 6px 14px; font-size: 0.8rem; }
+.hero-more, .hero-on {
+  background: rgba(255, 255, 255, 0.18); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.42); box-shadow: none;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.hero-skel { height: 180px; }
+.hero-dots { display: flex; justify-content: center; gap: 2px; margin-top: 8px; }
+.hero-dot { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 99px; }
+.hero-dot::before {
+  content: ''; width: 7px; height: 7px; border-radius: 99px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  transition: width 0.2s, background-color 0.2s;
+}
+.hero-dot.on::before { width: 18px; background: var(--pink); }
+@media (min-width: 820px) {
+  .genre-wrap { margin: 0 0 16px; }
+  .chips.genre-strip { padding-inline: 0; }
+  .hero-track, .hero-skel { height: 260px; }
+  .hero-text h3 { font-size: 1.4rem; }
+}
+
 .rec h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .see-all { font: 700 0.8rem 'Nunito', sans-serif; color: var(--lav); padding: 4px 2px; }
 .rec-plus.have { background: var(--mint); box-shadow: 0 4px 10px rgba(60, 180, 140, 0.4); font-size: 16px; }

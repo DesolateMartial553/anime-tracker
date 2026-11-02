@@ -203,7 +203,7 @@ export function clearRecommendationCache() {
 
 /* ---------- Explore ---------- */
 
-const EXPLORE_KEY = 'cc.explore.v1';
+const EXPLORE_KEY = 'cc.explore.v2';
 const EXPLORE_TTL = 6 * 60 * 60 * 1000;
 const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
 
@@ -216,7 +216,7 @@ export function seasonOf(date = new Date(), shift = 0) {
 }
 
 // Both queries were run against the live API before they were wired in (the old Explore died on a bad field).
-const SHOW_FIELDS = `fragment F on Media { id title { english romaji native } coverImage { large color } episodes format
+const SHOW_FIELDS = `fragment F on Media { id title { english romaji native } bannerImage coverImage { large color } episodes format
   seasonYear status countryOfOrigin averageScore genres description(asHtml: false) nextAiringEpisode { episode airingAt } }`;
 
 const EXPLORE = `query ($s: MediaSeason, $y: Int, $ns: MediaSeason, $ny: Int) {
@@ -246,7 +246,7 @@ const BROWSE_KINDS = {
   genre: { sort: ['POPULARITY_DESC'] },
 };
 
-const toExploreShow = (m) => ({ ...toShow(m), genres: (m.genres || []).slice(0, 4), next: m.nextAiringEpisode });
+const toExploreShow = (m) => ({ ...toShow(m), genres: (m.genres || []).slice(0, 4), banner: m.bannerImage || '', next: m.nextAiringEpisode });
 const withCover = (list) => list.map(toExploreShow).filter((s) => s.cover_url);
 
 // { shelves: { trending, season, upcoming, top, donghua }, genres }, cached for 6 hours per season.

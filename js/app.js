@@ -407,6 +407,12 @@ const SHELVES = [
 ];
 const typeOK = (it) => exploreKind === 'all' || (exploreKind === 'donghua') === isDonghua(it);
 
+// The "+" sits outside the tile button (buttons can't nest): it's a sibling that
+// floats over the cover's corner, like the shelf's "+1".
+const quickAddBtn = (it, have) => (have
+  ? '<span class="rec-plus have" aria-hidden="true">✓</span>'
+  : `<button class="rec-plus" data-quick-add="${it.anilist_id}" aria-label="Add ${esc(it.title)} to Plan to watch">+</button>`);
+
 function exploreTile(it, i, why = '', owned = false) {
   const have = store.findByAnilist(it.anilist_id);
   const open = owned && have ? `data-open="${have.id}"` : `data-preview="${it.anilist_id}"`;
@@ -416,12 +422,12 @@ function exploreTile(it, i, why = '', owned = false) {
     <button class="rec-tile" ${open} aria-label="More about ${esc(it.title)}${have ? ', on your list' : ''}">
       <span class="rec-cover">
         <img src="${esc(it.cover_url)}" alt="" loading="lazy">
-        ${have ? '<span class="rec-plus have" aria-hidden="true">✓</span>' : '<span class="rec-plus" aria-hidden="true">+</span>'}
       </span>
       <span class="rec-name">${esc(it.title)}</span>
       <span class="rec-meta">${[isDonghua(it) ? 'Donghua' : '', it.year, next ? `ep ${next.episode} in ${countdown(next.airingAt)}` : it.total_eps ? `${it.total_eps} ep` : ''].filter(Boolean).join(' · ')}${score ? ` ${HEART}${score}` : ''}</span>
       ${why ? `<span class="rec-why">${esc(why)}</span>` : ''}
     </button>
+    ${quickAddBtn(it, have)}
   </li>`;
 }
 
@@ -459,14 +465,154 @@ const exploreTypeSeg = () => `<div class="seg" role="group" aria-label="Show typ
 
 const exploreFail = () => `<div class="empty">${mochi()}<p>Couldn't reach AniList just now.</p><button class="pill" data-rec-refresh>Try again</button></div>`;
 
-function renderExplore() {
-  const head = `<div class="air-head rec-head">
-    <div><h2>Explore</h2><p class="dim">Fresh from AniList, and picked from your shelf.</p></div>
+// One row: the title, the All/Anime/Donghua switch and refresh. The subtitle went to make room.
+const exploreHead = () => `<div class="ex-top">
+  <h2 class="ex-title">Explore</h2>
+  <div class="ex-tools">${exploreTypeSeg()}
     <button class="icon-btn" data-rec-refresh aria-label="Refresh Explore">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
     </button>
-  </div>${exploreTypeSeg()}`;
+  </div>
+</div>`;
 
+// Genres: one sideways-scrolling row of small pills, right under the header.
+function genreStrip() {
+  if (explore.data) {
+    return `<div class="genre-wrap"><div class="chips scroll genre-strip" role="group" aria-label="Genres">
+      ${explore.data.genres.map((g) => `<button class="chip" data-genre="${esc(g)}">${esc(g)}</button>`).join('')}
+    </div></div>`;
+  }
+  if (explore.error) return '';
+  return `<div class="genre-wrap"><div class="chips scroll genre-strip" aria-busy="true" aria-label="Loading genres">
+    ${Array.from({ length: 6 }, (_, i) => `<span class="skel genre-skel" style="width:${56 + i * 12}px"></span>`).join('')}
+  </div></div>`;
+}
+
+/* ---------- Explore hero: a spotlight of what's trending ---------- */
+// The first few trending shows, after the type filter. Slide N is track child N.
+const HERO_MAX = 5;
+let heroIndex = 0;
+let heroTimer = null;
+let heroPaused = false; // true while a finger or pointer is on the hero
+
+const heroList = () => (explore.data ? explore.data.shelves.trending.filter(typeOK).slice(0, HERO_MAX) : []);
+
+function heroMeta(it) {
+  const next = it.next && it.next.airingAt * 1000 > Date.now() ? it.next : null;
+  return [
+    isDonghua(it) ? 'Donghua' : 'Anime',
+    it.year,
+    next ? `ep ${next.episode} in ${countdown(next.airingAt)}` : it.total_eps ? `${it.total_eps} ep` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function heroSlide(it) {
+  const have = store.findByAnilist(it.anilist_id);
+  // No banner on AniList: the cover, blown up and blurred, stands in for one.
+  const img = it.banner
+    ? `<img class="hero-img" src="${esc(it.banner)}" alt="" loading="lazy">`
+    : `<img class="hero-img is-cover" src="${esc(it.cover_url)}" alt="" loading="lazy">`;
+  return `<article class="hero-slide" style="--tint:${tintOf(it)}">
+    ${img}
+    <div class="hero-shade" aria-hidden="true"></div>
+    <div class="hero-text">
+      <h3>${esc(it.title)}</h3>
+      <p>${esc(heroMeta(it))}</p>
+      <div class="hero-actions">
+        ${have
+          ? `<span class="pill hero-on">On ${esc(STATUS_LABEL[have.status])} ✓</span>`
+          : `<button class="pill hero-add" data-quick-add="${it.anilist_id}" aria-label="Add ${esc(it.title)} to Plan to watch">+ Plan to watch</button>`}
+        <button class="pill hero-more" data-preview="${it.anilist_id}" aria-label="More about ${esc(it.title)}">More</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function heroDots(items) {
+  if (items.length < 2) return '';
+  return `<div class="hero-dots">${items.map((it, i) => `<button class="hero-dot${i === heroIndex ? ' on' : ''}" data-hero-dot="${i}" aria-label="Slide ${i + 1}: ${esc(it.title)}"${i === heroIndex ? ' aria-current="true"' : ''}></button>`).join('')}</div>`;
+}
+
+function heroSection() {
+  const items = heroList();
+  if (!items.length) {
+    if (explore.error) return '';
+    if (!explore.data) return '<div class="hero hero-skel skel" aria-busy="true" aria-label="Loading the spotlight"></div>';
+    return '';
+  }
+  if (heroIndex >= items.length) heroIndex = 0;
+  return `<div class="hero-wrap">
+    <section class="hero" aria-label="Spotlight">
+      <div class="hero-track" tabindex="0" role="group" aria-label="Trending spotlights">${items.map(heroSlide).join('')}</div>
+    </section>
+    ${heroDots(items)}
+  </div>`;
+}
+
+function heroSetIndex(i) {
+  main.querySelectorAll('.hero-dot').forEach((dot, k) => {
+    dot.classList.toggle('on', k === i);
+    if (k === i) dot.setAttribute('aria-current', 'true');
+    else dot.removeAttribute('aria-current');
+  });
+}
+
+// Scrolls the track to a slide. Slide widths are 100% of the track, so the offset is a plain multiple.
+function heroGo(i, smooth = true) {
+  const track = $('.hero-track', main);
+  if (!track) return;
+  heroIndex = i;
+  heroSetIndex(i);
+  track.scrollTo({ left: i * track.clientWidth, behavior: smooth && !reduceMotion() ? 'smooth' : 'auto' });
+}
+
+function heroTick() {
+  const track = $('.hero-track', main);
+  if (!track || heroPaused || document.hidden) return;
+  const n = track.children.length;
+  if (n < 2) return;
+  heroGo((heroIndex + 1) % n);
+}
+
+function stopHero() {
+  clearInterval(heroTimer);
+  heroTimer = null;
+}
+
+// Keeps one ~6s timer alive while the hero is on screen, and none anywhere else.
+function syncHeroTimer() {
+  const track = ui.view === 'explore' && !browse ? $('.hero-track', main) : null;
+  if (!track || reduceMotion() || track.children.length < 2) return stopHero();
+  if (!heroTimer) heroTimer = setInterval(heroTick, 6000);
+}
+
+function wireHero() {
+  const hero = $('.hero', main);
+  if (!hero) return;
+  const track = $('.hero-track', hero);
+  if (track && heroIndex) track.scrollLeft = heroIndex * track.clientWidth; // stay on her slide across re-renders
+  const pause = () => { heroPaused = true; };
+  const play = () => { heroPaused = false; };
+  hero.addEventListener('pointerdown', pause);
+  hero.addEventListener('pointerup', play);
+  hero.addEventListener('pointercancel', play);
+  hero.addEventListener('pointerenter', pause);
+  hero.addEventListener('pointerleave', play);
+}
+
+// Swiping the track by hand moves the dots too (scroll doesn't bubble, so catch it on main).
+main.addEventListener('scroll', (ev) => {
+  const track = ev.target;
+  if (!track.classList?.contains('hero-track')) return;
+  const w = track.clientWidth;
+  if (!w) return;
+  const i = Math.round(track.scrollLeft / w);
+  if (i === heroIndex) return;
+  heroIndex = i;
+  heroSetIndex(i);
+}, true);
+
+function renderExplore() {
   const picks = pickedForYou();
   let mine;
   if (picks.length) mine = `<section class="rec"><h3>Picked for you</h3><ul class="rec-row">${picks.map((p, i) => exploreTile(p.it, i, p.why)).join('')}</ul></section>`;
@@ -482,12 +628,13 @@ function renderExplore() {
       if (!items.length) return '';
       return `<section class="rec"><h3>${title}<button class="see-all" data-see-all="${k}" data-title="${esc(title)}">See all ›</button></h3>
         <ul class="rec-row">${items.map((it, i) => exploreTile(it, i)).join('')}</ul></section>`;
-    }).join('') + `<section class="rec"><h3>Browse by genre</h3>
-      <div class="chips wrap">${explore.data.genres.map((g) => `<button class="chip" data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div></section>`;
+    }).join('');
   } else if (explore.error) rest = exploreFail();
   else rest = shelfSkeleton(2);
 
-  main.innerHTML = head + mine + rest;
+  main.innerHTML = exploreHead() + genreStrip() + heroSection() + mine + rest;
+  wireHero();
+  syncHeroTimer();
 }
 
 /* ---------- "See all" grid ---------- */
@@ -624,6 +771,22 @@ async function loadExplore({ force = false } = {}) {
   if (ui.view === 'explore' && !browse) renderExplore();
 }
 
+// "+" on a tile or in the hero: one tap onto Plan to watch, with an undo.
+async function quickAdd(aid, btn) {
+  const show = recShows.get(aid);
+  if (!show || store.findByAnilist(aid)) return;
+  const rect = btn.getBoundingClientRect();
+  const pending = store.add(show, 'planning'); // optimistic, so the tile shows its ✓ straight away
+  const row = store.findByAnilist(aid);
+  buzz();
+  burst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 8, dist: 50, size: 14 });
+  toast('Added to Plan to watch ✿', {
+    label: 'Undo',
+    fn: () => { if (row) safe(store.remove(row.id)); },
+  });
+  if (!(await safe(pending))) render();
+}
+
 /* ---------- preview sheet (a suggestion before adding it) ---------- */
 
 function openPreview(aid) {
@@ -717,6 +880,8 @@ function render(animate = false) {
   if (ui.view === 'list') {
     placeInd('.chips.scroll', 'status');
   }
+  // No spotlight timer while she's on another tab (or in a "See all" grid).
+  if (ui.view !== 'explore' || browse) stopHero();
   document.querySelectorAll('.nav-btn[data-view]').forEach((b) => {
     if (b.dataset.view === ui.view) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -1341,6 +1506,10 @@ document.addEventListener('click', (ev) => {
     openBrowse(d.seeAll, null, d.title);
   } else if (d.genre) {
     openBrowse('genre', d.genre, d.genre);
+  } else if (d.quickAdd) {
+    quickAdd(Number(d.quickAdd), t);
+  } else if ('heroDot' in d) {
+    heroGo(Number(d.heroDot));
   } else if ('browseMore' in d) {
     loadBrowse();
   } else if ('toggleDesc' in d) {
